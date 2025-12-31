@@ -1,0 +1,3 @@
+[workspace]
+members = ["storage_manager", "bluedb"]
+resolver = "2"
