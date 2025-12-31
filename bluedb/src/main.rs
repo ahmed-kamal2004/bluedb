@@ -1,6 +1,7 @@
-use storage_manager::add;
+use storage_manager::{add, create_random_tlv, get_serialized};
 
 fn main() {
-    let output = add(1, 2);
-    println!(" {} ", output);
+    let tlv = create_random_tlv();
+    let bytes = get_serialized(&tlv);
+    println!(" {:?} ", bytes);
 }

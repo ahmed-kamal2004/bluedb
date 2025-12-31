@@ -1,0 +1,3 @@
+
+Variable sized-data representation
+- I choose for now TLV over Schema-Aware tuples approach, to give me and the users the extreme flexibility.
