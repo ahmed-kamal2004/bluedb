@@ -1,26 +1,24 @@
 #[derive(Copy, Clone, Debug)]
 enum Type {
     INT,
-    CHAR
+    CHAR,
 }
-
 
 #[derive(Clone, Debug)]
 pub struct TLV {
     ftype: Type,
-    fvalue: Vec<bool>,
-    flen: u8
+    fvalue: Vec<u8>,
+    flen: u8,
 }
 
 impl TLV {
     pub fn new() -> TLV {
-        TLV{
+        TLV {
             ftype: Type::CHAR,
-            fvalue: vec![true, true],
-            flen: 4
+            fvalue: vec![0, 0],
+            flen: 4,
         }
     }
-
 
     pub fn serialize(self: &Self) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -31,6 +29,5 @@ impl TLV {
             bytes.extend_from_slice(&(*val as u8).to_be_bytes());
         }
         bytes
-        
     }
 }

@@ -1,12 +1,8 @@
 use crate::tlv::TLV;
 
-pub (crate) mod tlv;
-
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
+pub(crate) mod fmanager;
+pub(crate) mod schema;
+pub(crate) mod tlv;
 
 pub fn create_random_tlv() -> tlv::TLV {
     TLV::new()
@@ -14,9 +10,11 @@ pub fn create_random_tlv() -> tlv::TLV {
 
 pub fn get_serialized(tlv: &TLV) -> Vec<u8> {
     tlv.serialize()
-} 
+}
 
+// pub create_schema {
 
+// }
 
 #[cfg(test)]
 mod tests {
@@ -24,7 +22,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+        // assert_eq!(result, 4);
     }
 }
