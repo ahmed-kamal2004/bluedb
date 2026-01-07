@@ -1,11 +1,11 @@
-pub(crate) enum Op {
+pub enum Op {
     READ,
     WRITE
 }
 
 
-pub(crate) struct DiskRequest {
-    operation: Op,
-    page_id: i32,
-    // page_ptr: 
+pub struct DiskRequest {
+    pub operation: Op,
+    pub object_id: usize,
+    pub page_id: usize,
 }   

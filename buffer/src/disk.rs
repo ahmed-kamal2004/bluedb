@@ -1,14 +1,15 @@
 use std::path::Path;
-use std::fs::File;
-use std::io::{self, Read};
+use std::sync::Arc;
+use std::sync::RwLock;
+use crate::PAGE_SIZE;
+use crate::page::PageFrame;
 
-pub(crate) DiskManager;
+#[derive(Debug)]
+pub(crate) struct DiskManager;
 
 
 impl DiskManager {
-    pub fn read(file_path: Path, page_num: usize) {
-
-        // let mut file = File::open
-
+    pub fn read(file_path: &Path, page_num: usize, arc_out: &mut Arc<RwLock<PageFrame>>) {
+        todo!()
     }
 }
