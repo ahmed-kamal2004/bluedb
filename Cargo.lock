@@ -6,7 +6,14 @@ version = 4
 name = "bluedb"
 version = "0.1.0"
 dependencies = [
- "storage_manager",
+ "buffer",
+]
+
+[[package]]
+name = "buffer"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -55,13 +62,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "storage_manager"
-version = "0.1.0"
-dependencies = [
- "serde",
 ]
 
 [[package]]
