@@ -1,3 +1,10 @@
+/// TODO: hashmap isn't safe for concurrent modification (dashmap or rwlock)
+/// TODO: flush all the BufPool on drop
+/// TODO: dirty pages handling ?
+/// TODO: eviction policy and requirements ?
+/// TODO: eviction at Arc = 1 ? what about if during disk read or write ?
+/// TODO: pinning ?
+/// TODO: add error handling in an idomatic way
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::path::{Path, PathBuf};
@@ -10,7 +17,7 @@ use super::page::PageFrame;
 pub struct BufPool {
     map: HashMap<(usize, usize), Arc<RwLock<PageFrame>>>,
     path: HashMap<usize, PathBuf>,
-    capacity: usize
+    capacity: usize // not used yet
 }
 
 

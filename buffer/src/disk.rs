@@ -1,3 +1,7 @@
+/// TODO: Better error handling mechanisms
+/// TODO: keep files open
+/// TODO: what about fsync ?
+/// TODO: check alignment requirements
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use crate::PAGE_SIZE;
