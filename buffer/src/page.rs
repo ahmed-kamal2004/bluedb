@@ -4,9 +4,9 @@ use super::PAGE_SIZE;
 
 #[repr(C)]
 #[derive(Debug)]
-pub(crate) struct PageFrame {
-    page_id: usize, // Limiting the number of pages per table to be usize
-    page: Box<[u8; PAGE_SIZE]>
+pub struct PageFrame {
+    pub page_id: usize, // Limiting the number of pages per table to be usize
+    pub page: Box<[u8; PAGE_SIZE]>
 }
 
 impl PageFrame {

@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{ Arc, RwLock};
+use crate::page;
 use crate::request::DiskRequest;
-use crate::utils::PageGuard;
-use crate::request::Op;
 use super::disk::DiskManager; // to be used
 use super::page::PageFrame;
 
@@ -24,41 +23,20 @@ impl BufPool {
         }
     }
 
-    pub fn request<'a>(& 'a mut self, req: &DiskRequest) -> PageGuard<'a> {
-        unimplemented!();
+    pub fn fetch_page<'a>(& 'a mut self, req: &DiskRequest) -> Arc<RwLock<PageFrame>> {
         if !self.map.contains_key(&(req.object_id, req.page_id)) {
             let file_path = &self.path[&req.object_id];
-            // let page_arc = Arc::new(RwLock::new(PageFrame::new()));
-            // DiskManager::read(&file_path, req.page_id);
+            let mut page_arc = Arc::new(RwLock::new(PageFrame::new()));
+            DiskManager::read(&file_path, req.page_id, &mut page_arc);
+            self.map.insert((req.object_id.clone(), req.page_id.clone()), Arc::clone(&page_arc));
+            drop(page_arc);
             self.capacity += 1;
         }
 
-        match req.operation {
-            Op::WRITE => {
-                let ptr = self.map[&(req.object_id, req.page_id)].read().unwrap();
-                PageGuard::Read(ptr)
-            },
-            Op::READ => {
-                let ptr = self.map[&(req.object_id, req.page_id)].write().unwrap();
-                PageGuard::Write(ptr)
-            }
-        }
+        let ptr = &self.map[&(req.object_id, req.page_id)];
+        let arc_clone = Arc::clone(ptr);
+        arc_clone
     }
 }
-
-
-
-// use std::sync::{Arc, RwLock};
-
-// let shared = Arc::new(RwLock::new(42));
-
-// // Reader (waits if a writer holds the lock)
-// let r = shared.read().unwrap();
-
-// // Writer (waits until all readers release)
-// drop(r);
-// let mut w = shared.write().unwrap();
-// *w = 100;
-
 
 
