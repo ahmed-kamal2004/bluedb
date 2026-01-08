@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::collections::hash_map::Entry;
+use std::path::{Path, PathBuf};
 use std::sync::{ Arc, RwLock};
-use crate::page;
 use crate::request::DiskRequest;
 use super::disk::DiskManager; // to be used
 use super::page::PageFrame;
@@ -9,7 +9,7 @@ use super::page::PageFrame;
 #[derive(Debug)]
 pub struct BufPool {
     map: HashMap<(usize, usize), Arc<RwLock<PageFrame>>>,
-    path: HashMap<usize, Box<Path>>,
+    path: HashMap<usize, PathBuf>,
     capacity: usize
 }
 
@@ -23,19 +23,42 @@ impl BufPool {
         }
     }
 
-    pub fn fetch_page<'a>(& 'a mut self, req: &DiskRequest) -> Arc<RwLock<PageFrame>> {
-        if !self.map.contains_key(&(req.object_id, req.page_id)) {
-            let file_path = &self.path[&req.object_id];
-            let mut page_arc = Arc::new(RwLock::new(PageFrame::new()));
-            DiskManager::read(&file_path, req.page_id, &mut page_arc);
-            self.map.insert((req.object_id.clone(), req.page_id.clone()), Arc::clone(&page_arc));
-            drop(page_arc);
-            self.capacity += 1;
-        }
+    pub fn fetch_page(& mut self, req: &DiskRequest) -> Arc<RwLock<PageFrame>> {
+        match self.map.entry((req.object_id, req.page_id)) {
+            Entry::Occupied(e) => {
+                return Arc::clone(e.get());
+            },
+            Entry::Vacant(e) => {
+                let file_path = &self.path[&req.object_id];
+                let page_arc = Arc::new(RwLock::new(PageFrame::new()));
 
-        let ptr = &self.map[&(req.object_id, req.page_id)];
-        let arc_clone = Arc::clone(ptr);
-        arc_clone
+                {
+                    // read from disk
+                    let mut guard = page_arc.write().unwrap();
+                    DiskManager::read(&file_path, req.page_id, &mut guard);
+                }
+
+                return Arc::clone(e.insert(page_arc));
+            }
+        }
+    }
+
+    pub fn write_page(&self, req: &DiskRequest) {
+        let file_path = &self.path[&req.object_id];
+        let page_arc = Arc::clone(&self.map[&(req.object_id, req.page_id)]);
+        let guard = page_arc.read().unwrap();
+        DiskManager::write(file_path, req.page_id, &guard);
+    }
+
+    pub fn add_file(& mut self, file_path: &str, file_id: usize) {
+        self.path.insert(file_id, PathBuf::from(file_path));
+    }
+
+    pub fn get_file(&self, file_id: usize) -> &Path {
+        if self.path.contains_key(&file_id) {
+             return  &self.path[&file_id]; 
+        }
+        &Path::new("s")
     }
 }
 
