@@ -1,6 +1,7 @@
 use std::thread;
 use std::time::Duration;
 
+use buffer::page::PageKey;
 use buffer::pool::BufPool;
 use buffer::request::{DiskRequest, Op};
 
@@ -10,7 +11,28 @@ fn main() {
     println!("{:?}", pool);
     println!("Inside pool");
 
-    // let mut req = DiskRequest { operation:Op::READ, object_id: 1, page_id: 1};
+    let mut req = DiskRequest {
+        operation: Op::READ,
+        page_key: PageKey::new(1, 1),
+    };
+
+    let lock_guard = { pool.acquire_page(&req).unwrap() };
+
+    thread::sleep(Duration::from_secs(2));
+
+    {
+        pool.release_page(lock_guard);
+    }
+
+    req.operation = Op::WRITE;
+
+    let lock_guard2 = { pool.acquire_page(&req).unwrap() };
+
+    thread::sleep(Duration::from_secs(2));
+
+    {
+        pool.release_page(lock_guard2);
+    }
 
     // // let out = pool.fetch_page(&req);
 
@@ -27,18 +49,15 @@ fn main() {
     // let p_Arc = pool.fetch_page(&req);
     // println!(" {:?} ", p_Arc);
 
- 
     // println!("Making a change");
     // let mut page = p_Arc.write().unwrap();
     // let arr= &mut *page.page;
-    // arr[0..4000].fill(1); 
+    // arr[0..4000].fill(1);
     // drop(page);
-
 
     // println!("Writing");
     // req.operation = Op::WRITE;
     // pool.write_page(&req);
-
 
     // //fetch again
     // println!("Fetch after a change");
@@ -46,5 +65,4 @@ fn main() {
     // let p2_Arc = pool.fetch_page(&req);
     // let page_read = p2_Arc.read().unwrap();
     // println!(" {:?} ", page_read);
-
 }

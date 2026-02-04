@@ -1,6 +1,5 @@
-use std::usize;
 use super::PAGE_SIZE;
-
+use std::usize;
 
 type FileID = usize;
 type PageID = usize;
@@ -8,14 +7,14 @@ type PageID = usize;
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct PageKey {
     file_id: FileID,
-    page_id: PageID
+    page_id: PageID,
 }
 
 impl PageKey {
-    pub fn new() -> Self{
-        PageKey{
-            file_id: 0,
-            page_id: 0
+    pub fn new(x: FileID, y: PageID) -> Self {
+        PageKey {
+            file_id: x,
+            page_id: y,
         }
     }
 
@@ -30,8 +29,15 @@ impl PageKey {
     pub fn get_key(&self) -> (FileID, PageID) {
         (self.file_id, self.page_id)
     }
-}
 
+    pub fn get_file_id(&self) -> FileID {
+        self.file_id
+    }
+
+    pub fn get_page_id(&self) -> PageID {
+        self.page_id
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageMetaData {
@@ -41,10 +47,13 @@ pub struct PageMetaData {
 
 impl PageMetaData {
     pub fn new() -> Self {
-        PageMetaData { used_count: 0, dirty: false }
+        PageMetaData {
+            used_count: 0,
+            dirty: false,
+        }
     }
 
-    pub fn use_page(&mut self){
+    pub fn use_page(&mut self) {
         self.used_count += 1;
     }
 
@@ -65,13 +74,11 @@ impl PageMetaData {
     }
 }
 
-
-
-
 #[repr(C)]
 #[derive(Debug)]
 pub struct PageFrame {
     pub page_id: usize, // Limiting the number of pages per table to be usize
+    pub metadata: PageMetaData,
     pub page: Box<[u8; PAGE_SIZE]>, // 8 byte -(pointing to)> // 8192 bytes in heap memory
 }
 
@@ -79,6 +86,7 @@ impl PageFrame {
     pub fn new() -> Self {
         PageFrame {
             page_id: usize::MIN,
+            metadata: PageMetaData::new(),
             page: Box::new([0; PAGE_SIZE]),
         }
     }

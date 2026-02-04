@@ -1,11 +1,11 @@
+use crate::page::PageKey;
+
 pub enum Op {
     READ,
-    WRITE
+    WRITE,
 }
-
 
 pub struct DiskRequest {
     pub operation: Op,
-    pub object_id: usize,
-    pub page_id: usize,
-}   
+    pub page_key: PageKey,
+}
