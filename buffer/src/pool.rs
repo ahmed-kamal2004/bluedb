@@ -1,22 +1,21 @@
-use super::disk::DiskManager; // to be used
+use super::disk::DiskManager;
 use super::page::PageFrame;
 use super::request::Op;
 use crate::page::PageKey;
 use crate::request::DiskRequest;
 use crate::util::LockGuard;
-use crate::{BUFFER_CAPACITY, EVICTION_PERIOD, EVICTION_THREASHOLD, FILES_METADATA, page};
-use std::collections::hash_map::Entry;
-/// TODO: hashmap isn't safe for concurrent modification (dashmap or rwlock)
+use crate::{BUFFER_CAPACITY, EVICTION_PERIOD, EVICTION_THREASHOLD, FILES_METADATA};
 /// TODO: flush all the BufPool on drop
-/// TODO: dirty pages handling ?
-/// TODO: eviction policy and requirements ?
-/// TODO: eviction at Arc = 1 ? what about if during disk read or write ?
 /// TODO: pinning ?
 /// TODO: add error handling in an idomatic way
+/// TODO: implement different eviction policies
+/// TODO: improve concurrency (this is prune to deadlocks) (most important part)
+/// TODO: add file metadata management
+/// TODO: improve logging
+/// TODO: create a wrapper that understands databases over it.
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -256,24 +255,6 @@ impl BufPool {
 
         *self.path.write().unwrap() = path_hashmap;
     }
-
-    // pub fn write_page(&self, req: &DiskRequest) {
-    //     let file_path = &self.path[&req.object_id];
-    //     let page_arc = Arc::clone(&self.map[&(req.object_id, req.page_id)]);
-    //     let guard = page_arc.read().unwrap();
-    //     DiskManager::write(file_path, req.page_id, &guard);
-    // }
-
-    // pub fn add_file(& mut self, file_path: &str, file_id: usize) {
-    //     self.path.insert(file_id, PathBuf::from(file_path));
-    // }
-
-    // pub fn get_file(&self, file_id: usize) -> &Path {
-    //     if self.path.contains_key(&file_id) {
-    //          return  &self.path[&file_id];
-    //     }
-    //     &Path::new("s")
-    // }
 }
 
 impl Drop for BufPool {
