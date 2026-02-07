@@ -9,8 +9,6 @@ fn main() {
     let pool = Arc::new(BufPool::initialize());
 
     // thread::sleep(Duration::from_secs(3));
-    println!("{:?}", pool);
-    println!("Inside pool");
 
     let mut req = DiskRequest {
         operation: Op::READ,
@@ -27,7 +25,7 @@ fn main() {
             page_key: PageKey::new(1, 1),
         };
         let lock_guard2 = { arc_pool.acquire_page(&req2).unwrap() };
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(10));
         arc_pool.release_page(lock_guard2);
     });
 
@@ -42,7 +40,7 @@ fn main() {
 
     let lock_guard2 = { pool.acquire_page(&req).unwrap() };
 
-    thread::sleep(Duration::from_secs(2));
+    thread::sleep(Duration::from_secs(10));
 
     {
         pool.release_page(lock_guard2);
@@ -57,7 +55,7 @@ fn main() {
             page_key: PageKey::new(1, 1),
         };
         let lock_guard3 = { arc_pool2.acquire_page(&req3).unwrap() };
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(10));
         arc_pool2.release_page(lock_guard3);
     });
 
@@ -68,7 +66,7 @@ fn main() {
             page_key: PageKey::new(1, 1),
         };
         let lock_guard3 = { arc_pool3.acquire_page(&req3).unwrap() };
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(10));
         arc_pool3.release_page(lock_guard3);
     });
 
@@ -79,7 +77,7 @@ fn main() {
             page_key: PageKey::new(1, 1),
         };
         let lock_guard2 = { arc_pool4.acquire_page(&req2).unwrap() };
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(1));
         arc_pool4.release_page(lock_guard2);
     });
 

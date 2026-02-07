@@ -4,7 +4,7 @@ use super::request::Op;
 use crate::page::PageKey;
 use crate::request::DiskRequest;
 use crate::util::LockGuard;
-use crate::{BUFFER_CAPACITY, EVICTION_PERIOD, EVICTION_THREASHOLD, FILES_METADATA};
+use crate::{EVICTION_PERIOD, EVICTION_THREASHOLD, FILES_METADATA};
 /// TODO: flush all the BufPool on drop
 /// TODO: pinning ?
 /// TODO: add error handling in an idomatic way
@@ -27,7 +27,6 @@ pub struct BufPool {
     page_id_queue: Arc<RwLock<VecDeque<PageKey>>>, // for eviction policy
     path: Arc<RwLock<HashMap<usize, PathBuf>>>,    // for file pathes
     usage_map: Arc<RwLock<HashMap<PageKey, AtomicUsize>>>, // track page usage ()
-    capacity: usize,                               // not used yet
     eviction_thread: Option<JoinHandle<()>>,
 }
 
@@ -38,7 +37,6 @@ impl BufPool {
             page_id_queue: Arc::new(RwLock::new(VecDeque::new())),
             path: Arc::new(RwLock::new(HashMap::new())),
             usage_map: Arc::new(RwLock::new(HashMap::new())),
-            capacity: BUFFER_CAPACITY,
             eviction_thread: None,
         }
     }
@@ -101,7 +99,7 @@ impl BufPool {
         let mut usage_map_mutable_lock = usage_map.write().unwrap(); // prevents writes to it.
         let mut queue_mutable_lock = page_id_queue.write().unwrap(); // prevents read or writes to it.
         let size_of_queue = queue_mutable_lock.len();
-        for i in 0..size_of_queue {
+        for _i in 0..size_of_queue {
             let front_id_in_queue = queue_mutable_lock.pop_back().unwrap();
 
             // check eviction logic
@@ -211,7 +209,7 @@ impl BufPool {
                     "[BufPool] Acquired READ lock for PageKey: {:?}",
                     req.page_key
                 );
-                Ok(LockGuard::READ(guard, arc_clone, req.page_key))
+                Ok(LockGuard::Read(guard, arc_clone, req.page_key))
             }
             Op::WRITE => {
                 let arc_clone = Arc::clone(&page);
@@ -220,7 +218,7 @@ impl BufPool {
                     "[BufPool] Acquired WRITE lock for PageKey: {:?}",
                     req.page_key
                 );
-                Ok(LockGuard::WRITE(guard, arc_clone, req.page_key))
+                Ok(LockGuard::Write(guard, arc_clone, req.page_key))
             }
         }
     }
@@ -246,7 +244,7 @@ impl BufPool {
     pub fn release_page(&self, guard: LockGuard) {
         let usage_map_read_lock = self.usage_map.read().unwrap(); // prevents writes to it.
         match guard {
-            LockGuard::READ(_, _, key) => {
+            LockGuard::Read(_, _, key) => {
                 let page_usage = usage_map_read_lock.get(&key).unwrap();
                 page_usage.store(
                     page_usage.load(std::sync::atomic::Ordering::SeqCst) - 1,
@@ -254,7 +252,7 @@ impl BufPool {
                 );
                 println!("[BufPool] Released READ lock for PageKey: {:?}", key);
             }
-            LockGuard::WRITE(mut write_lock, _, key) => {
+            LockGuard::Write(mut write_lock, _, key) => {
                 write_lock.metadata.make_dirty();
                 let page_usage = usage_map_read_lock.get(&key).unwrap();
                 page_usage.store(

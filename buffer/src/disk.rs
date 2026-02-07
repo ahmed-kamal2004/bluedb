@@ -1,6 +1,5 @@
 use crate::PAGE_SIZE;
 use crate::page::PageFrame;
-use anyhow::Result;
 use libc;
 use std::fs::OpenOptions;
 use std::fs::read_to_string;
@@ -10,7 +9,6 @@ use std::fs::read_to_string;
 /// TODO: check alignment requirements
 use std::os::unix::fs::FileExt;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
 
 #[derive(Debug)]
 pub(crate) struct DiskManager;
@@ -22,7 +20,11 @@ impl DiskManager {
         let file = options.open(file_path)?;
         let mut buf = [0; PAGE_SIZE];
         file.read_at(&mut buf, (page_num * PAGE_SIZE) as u64)?;
-        opage.page = Box::new(buf);
+        *opage.page = buf;
+        println!(
+            "[Disk Manager] Read page {} from file {}",
+            page_num, file_path
+        );
         Ok(())
     }
 
@@ -31,6 +33,10 @@ impl DiskManager {
         options.custom_flags(libc::O_DIRECT).write(true);
         let file = options.open(file_path)?;
         file.write_at(&*ipage.page, (page_num * PAGE_SIZE) as u64)?;
+        println!(
+            "[Disk Manager] Written page {} to file {}",
+            page_num, file_path
+        );
         Ok(())
     }
 

@@ -1,5 +1,4 @@
 use super::PAGE_SIZE;
-use std::usize;
 
 type FileID = usize;
 type PageID = usize;
