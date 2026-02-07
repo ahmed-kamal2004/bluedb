@@ -1,12 +1,13 @@
-use std::thread;
-use std::time::Duration;
-
 use buffer::page::PageKey;
 use buffer::pool::BufPool;
 use buffer::request::{DiskRequest, Op};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 fn main() {
-    let mut pool = BufPool::initialize();
+    let pool = Arc::new(BufPool::initialize());
+
     // thread::sleep(Duration::from_secs(3));
     println!("{:?}", pool);
     println!("Inside pool");
@@ -18,6 +19,19 @@ fn main() {
 
     let lock_guard = { pool.acquire_page(&req).unwrap() };
 
+    thread::sleep(Duration::from_secs(2));
+    let arc_pool = Arc::clone(&pool);
+    let join_th1 = thread::spawn(move || {
+        let req2 = DiskRequest {
+            operation: Op::READ,
+            page_key: PageKey::new(1, 1),
+        };
+        let lock_guard2 = { arc_pool.acquire_page(&req2).unwrap() };
+        thread::sleep(Duration::from_secs(2));
+        arc_pool.release_page(lock_guard2);
+    });
+
+    join_th1.join().unwrap();
     thread::sleep(Duration::from_secs(2));
 
     {
@@ -34,6 +48,44 @@ fn main() {
         pool.release_page(lock_guard2);
     }
 
+    thread::sleep(Duration::from_secs(5));
+
+    let arc_pool2 = Arc::clone(&pool);
+    let join_th2 = thread::spawn(move || {
+        let req3 = DiskRequest {
+            operation: Op::WRITE,
+            page_key: PageKey::new(1, 1),
+        };
+        let lock_guard3 = { arc_pool2.acquire_page(&req3).unwrap() };
+        thread::sleep(Duration::from_secs(2));
+        arc_pool2.release_page(lock_guard3);
+    });
+
+    let arc_pool3 = Arc::clone(&pool);
+    let join_th3 = thread::spawn(move || {
+        let req3 = DiskRequest {
+            operation: Op::WRITE,
+            page_key: PageKey::new(1, 1),
+        };
+        let lock_guard3 = { arc_pool3.acquire_page(&req3).unwrap() };
+        thread::sleep(Duration::from_secs(2));
+        arc_pool3.release_page(lock_guard3);
+    });
+
+    let arc_pool4 = Arc::clone(&pool);
+    let join_th4 = thread::spawn(move || {
+        let req2 = DiskRequest {
+            operation: Op::READ,
+            page_key: PageKey::new(1, 1),
+        };
+        let lock_guard2 = { arc_pool4.acquire_page(&req2).unwrap() };
+        thread::sleep(Duration::from_secs(2));
+        arc_pool4.release_page(lock_guard2);
+    });
+
+    join_th2.join().unwrap();
+    join_th3.join().unwrap();
+    join_th4.join().unwrap();
     // // let out = pool.fetch_page(&req);
 
     // pool.add_file("/home/ahmed-kamal/Every/BlueDB/table001", 1);
