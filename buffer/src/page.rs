@@ -1,5 +1,4 @@
-use super::PAGE_SIZE;
-
+use crate::PAGE_SIZE;
 type FileID = usize;
 type PageID = usize;
 

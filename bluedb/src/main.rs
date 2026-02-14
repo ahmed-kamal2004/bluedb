@@ -1,3 +1,4 @@
+use buffer::builder::BufPoolBuilder;
 use buffer::page::PageKey;
 use buffer::pool::BufPool;
 use buffer::request::{DiskRequest, Op};
@@ -6,7 +7,15 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let pool = Arc::new(BufPool::initialize());
+    let mut pool = Arc::new(
+        BufPoolBuilder::new()
+            .set_file_info("/home/ahmed-kamal/Every/BlueDB/table-info".to_string())
+            .set_directory_data("/home/ahmed-kamal/Every/BlueDB/data".to_string())
+            .set_eviction_period(1)
+            .set_buffer_capacity(10240)
+            .set_eviction_threshold(0)
+            .build(),
+    );
 
     // thread::sleep(Duration::from_secs(3));
 
@@ -29,8 +38,8 @@ fn main() {
         arc_pool.release_page(lock_guard2);
     });
 
-    join_th1.join().unwrap();
-    thread::sleep(Duration::from_secs(2));
+    // join_th1.join().unwrap();
+    // thread::sleep(Duration::from_secs(2));
 
     {
         pool.release_page(lock_guard);
@@ -46,7 +55,7 @@ fn main() {
         pool.release_page(lock_guard2);
     }
 
-    thread::sleep(Duration::from_secs(5));
+    // thread::sleep(Duration::from_secs(5));
 
     let arc_pool2 = Arc::clone(&pool);
     let join_th2 = thread::spawn(move || {

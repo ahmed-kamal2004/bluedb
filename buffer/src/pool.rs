@@ -1,10 +1,10 @@
 use super::disk::DiskManager;
 use super::page::PageFrame;
 use super::request::Op;
+use crate::builder::BufPoolBuilder;
 use crate::page::PageKey;
 use crate::request::DiskRequest;
 use crate::util::LockGuard;
-use crate::{EVICTION_PERIOD, EVICTION_THREASHOLD, FILES_METADATA};
 /// TODO: flush all the BufPool on drop
 /// TODO: pinning ?
 /// TODO: add error handling in an idomatic way
@@ -23,33 +23,28 @@ use std::time::Duration;
 
 #[derive(Debug)]
 pub struct BufPool {
-    page_pool: Arc<RwLock<HashMap<PageKey, Arc<RwLock<PageFrame>>>>>,
-    page_id_queue: Arc<RwLock<VecDeque<PageKey>>>, // for eviction policy
-    path: Arc<RwLock<HashMap<usize, PathBuf>>>,    // for file pathes
-    usage_map: Arc<RwLock<HashMap<PageKey, AtomicUsize>>>, // track page usage ()
-    eviction_thread: Option<JoinHandle<()>>,
+    pub(crate) page_pool: Arc<RwLock<HashMap<PageKey, Arc<RwLock<PageFrame>>>>>,
+    pub(crate) page_id_queue: Arc<RwLock<VecDeque<PageKey>>>, // for eviction policy
+    pub(crate) path: Arc<RwLock<HashMap<usize, PathBuf>>>,    // for file pathes
+    pub(crate) usage_map: Arc<RwLock<HashMap<PageKey, AtomicUsize>>>, // track page usage ()
+    pub(crate) eviction_thread: Option<JoinHandle<()>>,
+    pub(crate) file_info: String, // file that contains all database info
+    pub(crate) directory_data: String, // directory that contains all the data (similar to pgdata)
+    pub(crate) eviction_period: u8, // time where the thread becomes sleep
+    pub(crate) buffer_capacity: u32, // num of pages only within the pool
+    pub(crate) eviction_threshold: u8, // number of times the page can be found unused during eviction.
 }
 
 impl BufPool {
-    pub fn new() -> Self {
-        BufPool {
-            page_pool: Arc::new(RwLock::new(HashMap::new())),
-            page_id_queue: Arc::new(RwLock::new(VecDeque::new())),
-            path: Arc::new(RwLock::new(HashMap::new())),
-            usage_map: Arc::new(RwLock::new(HashMap::new())),
-            eviction_thread: None,
-        }
+    pub fn builder() -> BufPoolBuilder {
+        BufPoolBuilder::new()
     }
 
     // Main buffer pool initialization function
-    pub fn initialize() -> Self {
-        let mut buf_pool = Self::new();
+    pub fn initialize(&mut self) {
+        self.load_files();
 
-        buf_pool.load_files();
-
-        buf_pool.eviction_start();
-
-        buf_pool
+        self.eviction_start();
     }
 
     pub fn eviction_start(&mut self) {
@@ -57,13 +52,17 @@ impl BufPool {
         let cloned_path_map = Arc::clone(&self.path);
         let cloned_page_id_queue = Arc::clone(&self.page_id_queue);
         let cloned_metadata_map = Arc::clone(&self.usage_map);
-        let join_evictor_handle: JoinHandle<()> = thread::spawn(|| {
+        let eviction_period = self.eviction_period;
+        let eviction_threshold = self.eviction_threshold;
+        let join_evictor_handle: JoinHandle<()> = thread::spawn(move || {
             println!("[Eviction] Eviction Thread Started");
             Self::eviction_loop(
                 cloned_page_pool,
                 cloned_page_id_queue,
                 cloned_metadata_map,
                 cloned_path_map,
+                eviction_period,
+                eviction_threshold,
             );
         });
         self.eviction_thread = Some(join_evictor_handle);
@@ -74,17 +73,20 @@ impl BufPool {
         page_id_queue: Arc<RwLock<VecDeque<PageKey>>>,
         usage_map: Arc<RwLock<HashMap<PageKey, AtomicUsize>>>,
         path_map: Arc<RwLock<HashMap<usize, PathBuf>>>,
+        eviction_period: u8,
+        eviction_threshold: u8,
     ) {
-        let mut eviction_map: HashMap<PageKey, u32> = HashMap::new();
+        let mut eviction_map: HashMap<PageKey, u8> = HashMap::new();
 
         loop {
-            thread::sleep(Duration::from_secs(EVICTION_PERIOD as u64));
+            thread::sleep(Duration::from_secs(eviction_period as u64));
             Self::evict(
                 Arc::clone(&page_pool),
                 Arc::clone(&page_id_queue),
                 Arc::clone(&usage_map),
                 Arc::clone(&path_map),
                 &mut eviction_map,
+                eviction_threshold,
             );
         }
     }
@@ -94,7 +96,8 @@ impl BufPool {
         page_id_queue: Arc<RwLock<VecDeque<PageKey>>>,
         usage_map: Arc<RwLock<HashMap<PageKey, AtomicUsize>>>,
         path_map: Arc<RwLock<HashMap<usize, PathBuf>>>,
-        eviction_map: &mut HashMap<PageKey, u32>,
+        eviction_map: &mut HashMap<PageKey, u8>,
+        eviction_threshold: u8,
     ) {
         let mut usage_map_mutable_lock = usage_map.write().unwrap(); // prevents writes to it.
         let mut queue_mutable_lock = page_id_queue.write().unwrap(); // prevents read or writes to it.
@@ -112,7 +115,7 @@ impl BufPool {
             {
                 let mut curr_eviction_counter = eviction_map[&front_id_in_queue];
                 curr_eviction_counter += 1;
-                if curr_eviction_counter >= EVICTION_THREASHOLD {
+                if curr_eviction_counter >= eviction_threshold {
                     eviction_map.remove(&front_id_in_queue); // remove from the single threaded eviction map
                     usage_map_mutable_lock.remove(&front_id_in_queue);
                     {
@@ -264,8 +267,12 @@ impl BufPool {
         }
     }
 
+    pub fn load_directory(&self) -> anyhow::Result<()> {
+        todo!()
+    }
+
     pub fn load_files(&self) {
-        let path_vector = DiskManager::read_file_line_by_line(FILES_METADATA);
+        let path_vector = DiskManager::read_file_line_by_line(&self.file_info);
         let path_hashmap: HashMap<usize, PathBuf> = path_vector
             .iter()
             .filter_map(|line| {
