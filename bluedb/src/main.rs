@@ -8,7 +8,7 @@ use std::time::Duration;
 
 fn main() {
     let mut pool = Arc::new(
-        BufPoolBuilder::new()
+        BufPoolBuilder::default()
             .set_file_info("/home/ahmed-kamal/Every/BlueDB/table-info".to_string())
             .set_directory_data("/home/ahmed-kamal/Every/BlueDB/data".to_string())
             .set_eviction_period(1)

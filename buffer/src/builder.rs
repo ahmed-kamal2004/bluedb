@@ -88,3 +88,9 @@ impl BufPoolBuilder {
         self
     }
 }
+
+impl Default for BufPoolBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -107,9 +107,7 @@ impl BufPool {
 
             // check eviction logic
             // if it is not used now -> then warn it, it num of warns is greater than a specific value then evict it
-            if !eviction_map.contains_key(&front_id_in_queue) {
-                eviction_map.insert(front_id_in_queue, 0);
-            }
+            eviction_map.entry(front_id_in_queue).or_insert(0);
             if usage_map_mutable_lock[&front_id_in_queue].load(std::sync::atomic::Ordering::SeqCst)
                 == 0
             {
@@ -161,7 +159,7 @@ impl BufPool {
     // Acquires read over the pool at the start.
     // if th page exists -> acquire read over the usage then acquire the page lock and return it.
     // if the page doesn't exist -> drop the pool read lock and acquire write lock over the queue, usage and pool
-    pub fn acquire_page(&self, req: &DiskRequest) -> anyhow::Result<LockGuard> {
+    pub fn acquire_page(&self, req: &DiskRequest) -> anyhow::Result<LockGuard<'_>> {
         let page: Arc<RwLock<PageFrame>> = {
             match self.acquire_existed_page(req) {
                 Some(page) => page,
@@ -183,7 +181,7 @@ impl BufPool {
                                 let path_lock = self.path.read().unwrap();
                                 path_lock[&req.page_key.get_file_id()].clone()
                             };
-                            let page_arc = Arc::new(RwLock::new(PageFrame::new()));
+                            let page_arc = Arc::new(RwLock::new(PageFrame::default()));
                             {
                                 // read from disk
                                 let mut guard = page_arc.write().unwrap();
@@ -207,7 +205,12 @@ impl BufPool {
         match req.operation {
             Op::READ => {
                 let arc_clone = Arc::clone(&page);
-                let guard = unsafe { std::mem::transmute(page.read().unwrap()) };
+                let guard = unsafe {
+                    std::mem::transmute::<
+                        std::sync::RwLockReadGuard<'_, PageFrame>,
+                        std::sync::RwLockReadGuard<'_, PageFrame>,
+                    >(page.read().unwrap())
+                };
                 println!(
                     "[BufPool] Acquired READ lock for PageKey: {:?}",
                     req.page_key
@@ -216,7 +219,12 @@ impl BufPool {
             }
             Op::WRITE => {
                 let arc_clone = Arc::clone(&page);
-                let guard = unsafe { std::mem::transmute(page.write().unwrap()) };
+                let guard = unsafe {
+                    std::mem::transmute::<
+                        std::sync::RwLockWriteGuard<'_, PageFrame>,
+                        std::sync::RwLockWriteGuard<'_, PageFrame>,
+                    >(page.write().unwrap())
+                };
                 println!(
                     "[BufPool] Acquired WRITE lock for PageKey: {:?}",
                     req.page_key
@@ -276,9 +284,7 @@ impl BufPool {
         let path_hashmap: HashMap<usize, PathBuf> = path_vector
             .iter()
             .filter_map(|line| {
-                let mut parts = line.splitn(2, ' ');
-                let key_str = parts.next()?;
-                let path_str = parts.next()?;
+                let (key_str, path_str) = line.split_once(' ')?;
                 let key = key_str.parse::<usize>().ok()?;
                 Some((key, PathBuf::from(path_str)))
             })
