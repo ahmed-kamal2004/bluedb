@@ -1,5 +1,7 @@
+use super::utils::DirectoryMetaData;
 use crate::PAGE_SIZE;
 use crate::page::PageFrame;
+use anyhow::Result;
 use libc;
 use std::fs::OpenOptions;
 use std::fs::read_to_string;
@@ -11,10 +13,14 @@ use std::os::unix::fs::FileExt;
 use std::os::unix::fs::OpenOptionsExt;
 
 #[derive(Debug)]
-pub(crate) struct DiskManager;
+pub struct DiskManager;
 
 impl DiskManager {
-    pub fn read_page(file_path: &str, page_num: usize, opage: &mut PageFrame) -> anyhow::Result<()> {
+    pub fn read_page(
+        file_path: &str,
+        page_num: usize,
+        opage: &mut PageFrame,
+    ) -> anyhow::Result<()> {
         let mut options = OpenOptions::new();
         options.custom_flags(libc::O_DIRECT).read(true);
         let file = options.open(file_path)?;
@@ -50,5 +56,7 @@ impl DiskManager {
         result
     }
 
-    // pub fn get_directory_metadata(dir_path: &str) -> anyhow::Result<
+    pub fn get_directory_metadata(dir_path: &str) -> anyhow::Result<DirectoryMetaData> {
+        todo!()
+    }
 }

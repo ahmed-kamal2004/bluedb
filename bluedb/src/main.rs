@@ -1,7 +1,7 @@
 use buffer::builder::BufPoolBuilder;
-use buffer::page::PageKey;
 use buffer::pool::BufPool;
 use buffer::request::{BufferRequest, Op};
+use disk::page::PageKey;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;

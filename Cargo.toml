@@ -1,3 +1,3 @@
 [workspace]
-members = ["buffer", "bluedb"]
+members = ["buffer", "bluedb", "disk"]
 resolver = "2"

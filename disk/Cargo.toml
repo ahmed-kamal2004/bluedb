@@ -1,8 +1,8 @@
 [package]
-name = "buffer"
+name = "disk"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+libc = "0.2.179"
 anyhow = "1.0.100"
-disk = { path = "../disk" }

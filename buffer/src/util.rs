@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::page::{PageFrame, PageKey};
+use disk::page::PageFrame;
+use disk::page::PageKey;
 
 #[derive(Debug)]
 pub enum LockGuard<'a> {

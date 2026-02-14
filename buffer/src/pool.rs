@@ -1,10 +1,10 @@
-use super::disk::DiskManager;
-use super::page::PageFrame;
 use super::request::Op;
 use crate::builder::BufPoolBuilder;
-use crate::page::PageKey;
 use crate::request::BufferRequest;
 use crate::util::LockGuard;
+use disk::disk::DiskManager;
+use disk::page::PageFrame;
+use disk::page::PageKey;
 /// TODO: flush all the BufPool on drop
 /// TODO: pinning ?
 /// TODO: add error handling in an idomatic way
