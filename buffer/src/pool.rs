@@ -3,13 +3,12 @@ use super::page::PageFrame;
 use super::request::Op;
 use crate::builder::BufPoolBuilder;
 use crate::page::PageKey;
-use crate::request::DiskRequest;
+use crate::request::BufferRequest;
 use crate::util::LockGuard;
 /// TODO: flush all the BufPool on drop
 /// TODO: pinning ?
 /// TODO: add error handling in an idomatic way
 /// TODO: implement different eviction policies
-/// TODO: improve concurrency (this is prune to deadlocks) (most important part) [DONE]
 /// TODO: add file metadata management
 /// TODO: improve logging
 /// TODO: create a wrapper that understands databases over it.
@@ -124,7 +123,7 @@ impl BufPool {
                         if guard.metadata.is_dirty() {
                             let path_map_lock = path_map.read().unwrap();
                             let file_path = &path_map_lock[&front_id_in_queue.get_file_id()];
-                            match DiskManager::write(
+                            match DiskManager::write_page(
                                 file_path.to_str().unwrap(),
                                 front_id_in_queue.get_page_id(),
                                 &guard,
@@ -159,7 +158,7 @@ impl BufPool {
     // Acquires read over the pool at the start.
     // if th page exists -> acquire read over the usage then acquire the page lock and return it.
     // if the page doesn't exist -> drop the pool read lock and acquire write lock over the queue, usage and pool
-    pub fn acquire_page(&self, req: &DiskRequest) -> anyhow::Result<LockGuard<'_>> {
+    pub fn acquire_page(&self, req: &BufferRequest) -> anyhow::Result<LockGuard<'_>> {
         let page: Arc<RwLock<PageFrame>> = {
             match self.acquire_existed_page(req) {
                 Some(page) => page,
@@ -185,7 +184,7 @@ impl BufPool {
                             {
                                 // read from disk
                                 let mut guard = page_arc.write().unwrap();
-                                DiskManager::read(
+                                DiskManager::read_page(
                                     file_path.to_str().unwrap(),
                                     req.page_key.get_page_id(),
                                     &mut guard,
@@ -234,7 +233,7 @@ impl BufPool {
         }
     }
 
-    fn acquire_existed_page(&self, req: &DiskRequest) -> Option<Arc<RwLock<PageFrame>>> {
+    fn acquire_existed_page(&self, req: &BufferRequest) -> Option<Arc<RwLock<PageFrame>>> {
         let pool_read = self.page_pool.read().unwrap();
         if pool_read.contains_key(&req.page_key) {
             let page_frame = pool_read.get(&req.page_key).unwrap();
@@ -273,10 +272,6 @@ impl BufPool {
                 println!("[BufPool] Released WRITE lock for PageKey: {:?}", key);
             }
         }
-    }
-
-    pub fn load_directory(&self) -> anyhow::Result<()> {
-        todo!()
     }
 
     pub fn load_files(&self) {

@@ -14,7 +14,7 @@ use std::os::unix::fs::OpenOptionsExt;
 pub(crate) struct DiskManager;
 
 impl DiskManager {
-    pub fn read(file_path: &str, page_num: usize, opage: &mut PageFrame) -> anyhow::Result<()> {
+    pub fn read_page(file_path: &str, page_num: usize, opage: &mut PageFrame) -> anyhow::Result<()> {
         let mut options = OpenOptions::new();
         options.custom_flags(libc::O_DIRECT).read(true);
         let file = options.open(file_path)?;
@@ -28,7 +28,7 @@ impl DiskManager {
         Ok(())
     }
 
-    pub fn write(file_path: &str, page_num: usize, ipage: &PageFrame) -> anyhow::Result<()> {
+    pub fn write_page(file_path: &str, page_num: usize, ipage: &PageFrame) -> anyhow::Result<()> {
         let mut options = OpenOptions::new();
         options.custom_flags(libc::O_DIRECT).write(true);
         let file = options.open(file_path)?;
@@ -49,4 +49,6 @@ impl DiskManager {
 
         result
     }
+
+    // pub fn get_directory_metadata(dir_path: &str) -> anyhow::Result<
 }

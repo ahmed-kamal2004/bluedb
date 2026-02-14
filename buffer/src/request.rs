@@ -7,7 +7,7 @@ pub enum Op {
 }
 
 #[derive(Debug)]
-pub struct DiskRequest {
+pub struct BufferRequest {
     pub operation: Op,
     pub page_key: PageKey,
 }
