@@ -12,6 +12,9 @@ use disk::page::PageKey;
 /// TODO: add file metadata management
 /// TODO: improve logging
 /// TODO: create a wrapper that understands databases over it.
+/// 
+/// TODO: instead of acquiring locks, what about an approach to just have counters for write and read transactions using it, as the current
+/// approach violates some rust compile time principles, can be very dangerous and bottle-neck.
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
