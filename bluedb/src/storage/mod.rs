@@ -5,14 +5,4 @@
 // TODO: tuple data layout -> HEADER + Field (word aligned)
 // TODO: tuple header -> Size
 
-use buffer::pool::BufPool;
-use buffer::builder::BufPoolBuilder;
-use disk::disk::DiskManager;
-
-pub struct StorageEngine {
-    pool: BufPool,
-}
-
-impl StorageEngine {
-    
-}
+pub mod storage;
