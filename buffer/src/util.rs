@@ -16,3 +16,10 @@ pub enum LockGuard<'a> {
         PageKey,
     ),
 }
+
+
+pub enum EvictionTimeOperation {
+    DOUBLE,
+    HALVE,
+    NONE
+}

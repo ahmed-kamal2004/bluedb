@@ -1,6 +1,7 @@
 use super::request::Op;
 use crate::builder::BufPoolBuilder;
 use crate::request::BufferRequest;
+use crate::util::EvictionTimeOperation;
 use crate::util::LockGuard;
 use disk::disk::DiskManager;
 use disk::page::PageFrame;
@@ -56,6 +57,7 @@ impl BufPool {
         let cloned_metadata_map = Arc::clone(&self.usage_map);
         let eviction_period = self.eviction_period;
         let eviction_threshold = self.eviction_threshold;
+        let max_capacity = self.buffer_capacity as usize;
         let join_evictor_handle: JoinHandle<()> = thread::spawn(move || {
             println!("[Eviction] Eviction Thread Started");
             Self::eviction_loop(
@@ -65,6 +67,7 @@ impl BufPool {
                 cloned_path_map,
                 eviction_period,
                 eviction_threshold,
+                max_capacity
             );
         });
         self.eviction_thread = Some(join_evictor_handle);
@@ -75,21 +78,40 @@ impl BufPool {
         page_id_queue: Arc<RwLock<VecDeque<PageKey>>>,
         usage_map: Arc<RwLock<HashMap<PageKey, AtomicUsize>>>,
         path_map: Arc<RwLock<HashMap<usize, PathBuf>>>,
-        eviction_period: u8,
+        mut eviction_period: u8,
         eviction_threshold: u8,
+        max_capacity: usize
     ) {
         let mut eviction_map: HashMap<PageKey, u8> = HashMap::new();
 
         loop {
             thread::sleep(Duration::from_secs(eviction_period as u64));
-            Self::evict(
+            let time_op = Self::evict(
                 Arc::clone(&page_pool),
                 Arc::clone(&page_id_queue),
                 Arc::clone(&usage_map),
                 Arc::clone(&path_map),
                 &mut eviction_map,
                 eviction_threshold,
-            );
+                max_capacity
+            ).expect("Eviction failed");
+            match time_op {
+                EvictionTimeOperation::DOUBLE => {
+                    if eviction_period >= 64 { // one minute is the max eviction period
+                        continue;
+                    }
+                    eviction_period = eviction_period * 2;
+                    println!("[Eviction] Doubling eviction period to {}", eviction_period);
+                }
+                EvictionTimeOperation::HALVE => {
+                    if eviction_period == 1 {
+                        continue;
+                    }
+                    eviction_period = if eviction_period > 1 { eviction_period / 2 } else { 1 };
+                    println!("[Eviction] Halving eviction period to {}", eviction_period);
+                }
+                _ => {},
+            }
         }
     }
 
@@ -100,10 +122,11 @@ impl BufPool {
         path_map: Arc<RwLock<HashMap<usize, PathBuf>>>,
         eviction_map: &mut HashMap<PageKey, u8>,
         eviction_threshold: u8,
-    ) {
+        max_capacity: usize,
+    ) -> anyhow::Result<EvictionTimeOperation>{
         let mut usage_map_mutable_lock = usage_map.write().unwrap(); // prevents writes to it.
         let mut queue_mutable_lock = page_id_queue.write().unwrap(); // prevents read or writes to it.
-        let size_of_queue = queue_mutable_lock.len();
+        let mut size_of_queue = queue_mutable_lock.len();
         for _i in 0..size_of_queue {
             let front_id_in_queue = queue_mutable_lock.pop_back().unwrap();
 
@@ -116,6 +139,7 @@ impl BufPool {
                 let mut curr_eviction_counter = eviction_map[&front_id_in_queue];
                 curr_eviction_counter += 1;
                 if curr_eviction_counter >= eviction_threshold {
+                    size_of_queue -= 1; // decrease the size of the queue when evicting the page from it.
                     eviction_map.remove(&front_id_in_queue); // remove from the single threaded eviction map
                     usage_map_mutable_lock.remove(&front_id_in_queue);
                     {
@@ -155,6 +179,14 @@ impl BufPool {
                 let eviction_val = eviction_map.get_mut(&front_id_in_queue).unwrap();
                 *eviction_val = 0;
             }
+        }
+        let empty_percent = (max_capacity - size_of_queue) as f64 / (max_capacity as f64);
+        if empty_percent >= 2.0 / 3.0 { // two thirds of the pool is empty, we can increase the eviction period to save resources.
+            Ok(EvictionTimeOperation::DOUBLE)
+        } else if empty_percent <= 1.0 / 3.0 { // two thirds of the pool is full, we need to decrease the eviction period to increase the eviction frequency and free some space.
+            Ok(EvictionTimeOperation::HALVE)
+        } else { // no decision needed
+            Ok(EvictionTimeOperation::NONE)
         }
     }
 
