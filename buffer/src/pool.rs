@@ -23,6 +23,7 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
+/// locking order: page_id_queue -> usage_map -> page_pool
 
 #[derive(Debug)]
 pub struct BufPool {
@@ -101,14 +102,14 @@ impl BufPool {
                         continue;
                     }
                     eviction_period = eviction_period * 2;
-                    println!("[Eviction] Doubling eviction period to {}", eviction_period);
+                    println!("[Eviction] Doubling eviction period to {} sec.", eviction_period);
                 }
                 EvictionTimeOperation::HALVE => {
                     if eviction_period == 1 {
                         continue;
                     }
                     eviction_period = if eviction_period > 1 { eviction_period / 2 } else { 1 };
-                    println!("[Eviction] Halving eviction period to {}", eviction_period);
+                    println!("[Eviction] Halving eviction period to {} sec.", eviction_period);
                 }
                 _ => {},
             }
@@ -124,8 +125,8 @@ impl BufPool {
         eviction_threshold: u8,
         max_capacity: usize,
     ) -> anyhow::Result<EvictionTimeOperation>{
-        let mut usage_map_mutable_lock = usage_map.write().unwrap(); // prevents writes to it.
         let mut queue_mutable_lock = page_id_queue.write().unwrap(); // prevents read or writes to it.
+        let mut usage_map_mutable_lock = usage_map.write().unwrap(); // prevents writes to it.
         let mut size_of_queue = queue_mutable_lock.len();
         for _i in 0..size_of_queue {
             let front_id_in_queue = queue_mutable_lock.pop_back().unwrap();
@@ -204,12 +205,12 @@ impl BufPool {
 
                     //acquire locks over the queue and usage map, this ensures no eviction is going now.
                     let mut queue_lock = self.page_id_queue.write().unwrap();
-                    let mut usage_map_mutable_lock = self.usage_map.write().unwrap();
 
                     // do a final check before retrieving the page from the disk to make sure it wasn't added by another thread while we were waiting for the locks
                     match self.acquire_existed_page(req) {
                         Some(page) => page,
                         None => {
+                            let mut usage_map_mutable_lock = self.usage_map.write().unwrap();
                             let mut pool_write = self.page_pool.write().unwrap();
                             let file_path = {
                                 let path_lock = self.path.read().unwrap();
@@ -269,15 +270,12 @@ impl BufPool {
     }
 
     fn acquire_existed_page(&self, req: &BufferRequest) -> Option<Arc<RwLock<PageFrame>>> {
+        let usage_read = self.usage_map.read().unwrap();
         let pool_read = self.page_pool.read().unwrap();
         if pool_read.contains_key(&req.page_key) {
             let page_frame = pool_read.get(&req.page_key).unwrap();
-            let usage_map_read = self.usage_map.read().unwrap();
-            let page_usage = usage_map_read.get(&req.page_key).unwrap();
-            page_usage.store(
-                page_usage.load(std::sync::atomic::Ordering::SeqCst) + 1,
-                std::sync::atomic::Ordering::SeqCst,
-            );
+            let page_usage = usage_read.get(&req.page_key).unwrap();
+            page_usage.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Some(Arc::clone(page_frame))
         } else {
             None
@@ -291,10 +289,7 @@ impl BufPool {
         match guard {
             LockGuard::Read(_, _, key) => {
                 let page_usage = usage_map_read_lock.get(&key).unwrap();
-                page_usage.store(
-                    page_usage.load(std::sync::atomic::Ordering::SeqCst) - 1,
-                    std::sync::atomic::Ordering::SeqCst,
-                );
+                page_usage.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 println!("[BufPool] Released READ lock for PageKey: {:?}", key);
             }
             LockGuard::Write(mut write_lock, _, key) => {

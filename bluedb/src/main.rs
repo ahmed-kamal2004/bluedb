@@ -14,7 +14,7 @@ fn main() {
             .set_file_info("/home/ahmed-kamal/Every/BlueDB/table-info".to_string())
             .set_directory_data("/home/ahmed-kamal/Every/BlueDB/data".to_string())
             .set_eviction_period(1)
-            .set_buffer_capacity(10240)
+            .set_buffer_capacity(1)
             .set_eviction_threshold(0)
             .build(),
     );
@@ -41,7 +41,7 @@ fn main() {
     });
 
     // join_th1.join().unwrap();
-    // thread::sleep(Duration::from_secs(2));
+    thread::sleep(Duration::from_secs(2));
 
     {
         pool.release_page(lock_guard);
@@ -57,7 +57,7 @@ fn main() {
         pool.release_page(lock_guard2);
     }
 
-    // thread::sleep(Duration::from_secs(5));
+    thread::sleep(Duration::from_secs(5));
 
     let arc_pool2 = Arc::clone(&pool);
     let join_th2 = thread::spawn(move || {
