@@ -13,3 +13,7 @@ sqlparser = "0.62.0"
 rustyline = "18.0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+base64 = "0.22.1"
+serde_json = "1.0.150"
+anyhow = "1.0.103"
+serde = { version = "1.0.228", features = ["derive"] }
