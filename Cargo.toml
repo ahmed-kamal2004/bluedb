@@ -1,3 +1,15 @@
-[workspace]
-members = ["buffer", "bluedb", "disk"]
-resolver = "2"
+[package]
+name = "bluedb"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "bluedb-client"
+path = "src/bin/client.rs"
+
+
+[dependencies]
+sqlparser = "0.62.0"
+rustyline = "18.0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

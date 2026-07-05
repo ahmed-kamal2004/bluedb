@@ -23,3 +23,8 @@ target
 # Ignore generated tables
 **/*table*
 **/!table.rs
+
+
+# Added by cargo
+
+/target
