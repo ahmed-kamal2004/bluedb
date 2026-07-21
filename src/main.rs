@@ -6,6 +6,8 @@ use std::thread;
 use tracing::info;
 
 mod config;
+mod catalog;
+mod pool;
 mod engine;
 use engine::engine::Engine;
 fn main() -> Result<()> {
@@ -57,37 +59,14 @@ fn main() -> Result<()> {
                 return;
             }
 
-            let startup_message = String::from_utf8_lossy(&buffer[..bytes_read]);
-            if !startup_message.starts_with("STARTUP") {
-                eprintln!("Invalid startup message: {}", startup_message);
-                return;
-            }
-
-            let database_name = startup_message.trim_start_matches("STARTUP").trim();
-            info!("Client requested to connect to database: {}", database_name);
-
-            // check if it exists
-            if engine_cloned.contains_database(database_name) {
-                info!(
-                    "Database {} exists. Proceeding with connection.",
-                    database_name
-                );
-            } else {
-                eprintln!(
-                    "Database {} does not exist. Closing connection.",
-                    database_name
-                );
-                return;
-            }
-
-            connection_handler(stream, engine_cloned, database_name);
+            connection_handler(stream, engine_cloned);
         });
     }
 
     Ok(())
 }
 
-fn connection_handler(mut stream: TcpStream, engine: Arc<Engine>, database_name: &str) {
+fn connection_handler(mut stream: TcpStream, engine: Arc<Engine>) {
     let mut buffer: [u8; 4096] = [0; 4096];
     loop {
         let bytes_read = match stream.read(&mut buffer) {
@@ -104,9 +83,9 @@ fn connection_handler(mut stream: TcpStream, engine: Arc<Engine>, database_name:
 
         let query = String::from_utf8_lossy(&buffer[..bytes_read]);
 
-        let response = match engine.process_query(&query, database_name) {
-            Ok(result) => String::from_utf8_lossy(&result).to_string(),
-            Err(e) => format!("ERROR: {:?}", e),
+        let response = match engine.process_query(&query) {
+            Ok(result) => String::from_utf8_lossy(result.as_slice()).into_owned(),
+            Err(e) => format!("Error processing query: {:?}", e),
         };
 
         if response.is_empty() {

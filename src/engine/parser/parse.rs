@@ -18,11 +18,12 @@ pub fn parse_query(query: &str) -> Result<Vec<Statement>, ProcessingError> {
             for stat in &ast {
                 match stat {
                     Statement::Query(_) => {}
-                    Statement::CreateDatabase { .. } => {}
                     Statement::CreateTable { .. } => {}
                     Statement::Insert { .. } => {}
                     Statement::Update { .. } => {}
                     Statement::Delete { .. } => {}
+                    Statement::StartTransaction { .. } => {}
+                    Statement::Commit { .. } => {}
                     // Statement::Drop { .. } => {},
                     _ => {
                         return Err(ProcessingError::ParseError(
