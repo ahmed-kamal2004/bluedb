@@ -1,5 +1,8 @@
 use anyhow::{Result};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use super::{
+    PAGE_SIZE, PAGE_HEADER_SIZE, FREE_SPACE_HEADER_SIZE, ROW_POINTER_SIZE, ROW_HEADER_SIZE, FIELD_LENGTH_SIZE,
+};
 
 /// The physical normal page in disk
 /// Page layout:
@@ -21,9 +24,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 ///         [Next Free Space Offset (2 bytes)]
 ///         [Free Space Size (2 bytes)]
 /// 
-/// Row Pointer (4 bytes):
+/// Row Pointer (2 bytes):
 ///      [Row Offset (2 bytes)]
-///      [Next Row Pointer Offset (2 bytes)]
 /// 
 /// Row header layout (10 bytes):
 ///      [Tmin (4 bytes)][Tmax (4 bytes)][Length (2 bytes)] + [Row Data (variable length)]
@@ -32,39 +34,6 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 ///      [Field Length (2 bytes)][Field Data (variable length)][Field Length (2 bytes)][Field Data (variable length)]...
 /// 
 /// TODO: enable HOT using cid
-
-
-// Page-wide constants
-const PAGE_SIZE: usize = 8192;
-
-// Page header layout constants
-const PAGE_HEADER_SIZE: usize = 23;
-const PAGE_TYPE_SIZE: usize = 1;
-const FREE_SPACE_TOTAL_SIZE: usize = 2;
-const NEXT_FREE_SPACE_OFFSET_SIZE: usize = 2;
-const NEXT_ROW_POINTER_OFFSET_SIZE: usize = 2;
-const LAST_TRANSACTION_ID_SIZE: usize = 4;
-const PAGE_ID_SIZE: usize = 4;
-const NEXT_PAGE_ID_SIZE: usize = 4;
-const PREV_PAGE_ID_SIZE: usize = 4;
-
-// Free space header layout constants
-const FREE_SPACE_HEADER_SIZE: usize = 4;
-// const NEXT_FREE_SPACE_OFFSET_SIZE: usize = 2; // declared above
-
-// Row pointer layout constants
-const ROW_POINTER_SIZE: usize = 4;
-const ROW_OFFSET_SIZE: usize = 2;
-// const NEXT_ROW_POINTER_OFFSET_SIZE: usize = 2; // declared above
-
-// Row header layout constants
-const ROW_HEADER_SIZE: usize = 10;
-const ROW_TMIN_SIZE: usize = 4;
-const ROW_TMAX_SIZE: usize = 4;
-const ROW_DATA_LENGTH_SIZE: usize = 2;
-
-// Row data layout constants
-const FIELD_LENGTH_SIZE: usize = 2;
 
 #[repr(u8)]
 #[derive(Immutable, TryFromBytes, KnownLayout, IntoBytes)]
@@ -98,7 +67,6 @@ pub struct FreeSpaceHeader {
 #[derive(Immutable, FromBytes, KnownLayout, IntoBytes, Debug)]
 pub struct RowPointer {
     pub row_offset: u16,
-    pub next_row_pointer_offset: u16,
 }
 
 #[repr(C, packed)]
@@ -171,12 +139,14 @@ impl Frame {
         let mut rows = Vec::new();
         let page_header = self.get_page_header().expect("Failed to read page header");
         let mut row_pointer_offset = page_header.next_row_pointer_offset as usize;
-        while row_pointer_offset != 0 {
+        while row_pointer_offset >= PAGE_HEADER_SIZE {
             let row_pointer = RowPointer::read_from_bytes(&self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE]).expect("Buffer size should match RowPointer layout perfectly");
             let row_header = self.get_row_header(row_pointer.row_offset as usize);
             let row_data = self.get_row_data(row_pointer.row_offset, row_header.length);
             rows.push((row_header, row_data));
-            row_pointer_offset = row_pointer.next_row_pointer_offset as usize;
+            println!("Traversed row at offset {}", row_pointer_offset);
+            row_pointer_offset -= ROW_POINTER_SIZE;
+            println!("Next row pointer offset: {}", row_pointer_offset);
         }   
         rows     
     }
@@ -287,7 +257,6 @@ impl Frame {
                     // Add the row pointer
                     let row_pointer = RowPointer {
                         row_offset: next_free_space_offset as u16,
-                        next_row_pointer_offset: page_header.next_row_pointer_offset,
                     };
                     let row_pointer_bytes = row_pointer.as_bytes();
                     self.data[first_free_space_offset ..first_free_space_offset + ROW_POINTER_SIZE].copy_from_slice(&row_pointer_bytes);
@@ -343,7 +312,6 @@ impl Frame {
                 // Add the row pointer
                 let row_pointer = RowPointer {
                     row_offset: final_offset as u16,
-                    next_row_pointer_offset: page_header.next_row_pointer_offset,
                 };
                 let row_pointer_bytes = row_pointer.as_bytes();
 
@@ -615,10 +583,6 @@ mod tests {
             }
         }
 
-        if rows.len() > 5 {
-            println!("... {} more rows omitted from output", rows.len() - 5);
-        }
-
         let header = frame.get_page_header().expect("page header should be readable");
         let free_space_total = header.free_space_total;
         let next_free_space_offset = header.next_free_space_offset;
@@ -631,6 +595,7 @@ mod tests {
         );
 
         assert!(inserted > 0, "at least one row should be inserted");
+        println!("Total rows traversed: {}, total inserted: {}", rows.len(), inserted);
         assert_eq!(rows.len(), inserted, "traversal should return all inserted rows");
     }
 }
