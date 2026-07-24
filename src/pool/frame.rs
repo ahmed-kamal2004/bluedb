@@ -16,9 +16,7 @@ use super::{
 /// 
 ///         [Last transaction ID (4 bytes)]
 /// 
-///         [Page ID (4 bytes)]
-///         [Next Page ID (4 bytes)]
-///         [Prev Page ID (4 bytes)]
+///  Note: page number = offset / PAGE_SIZE
 /// 
 /// Free Space Header (4 bytes):
 ///         [Next Free Space Offset (2 bytes)]
@@ -51,9 +49,6 @@ pub struct PageHeader {
     pub next_free_space_offset: u16,
     pub next_row_pointer_offset: u16,
     pub last_transaction_id: u32,
-    pub page_id: u32,
-    pub next_page_id: u32,
-    pub prev_page_id: u32,
 }
 
 #[repr(C, packed)]
@@ -91,7 +86,7 @@ pub struct Frame {
 impl Frame {
 
     // Page initialization and header management
-    pub fn initialize(&mut self, frame_type: FrameType, page_id: u32, txn_id: u32) {
+    pub fn initialize(&mut self, frame_type: FrameType, txn_id: u32) {
 
         // Add the page header
         let page_header = PageHeader {
@@ -100,9 +95,6 @@ impl Frame {
             next_free_space_offset: PAGE_HEADER_SIZE as u16,
             next_row_pointer_offset: 0,
             last_transaction_id: txn_id,
-            page_id,
-            next_page_id: 0,
-            prev_page_id: 0,
         };
 
         // Add the first free space header
@@ -369,24 +361,18 @@ mod tests {
     #[test]
     fn initialize_sets_expected_page_and_free_space_headers() -> Result<()> {
         let mut frame = new_frame();
-        frame.initialize(FrameType::Normal, 42, 7);
+        frame.initialize(FrameType::Normal, 7);
 
         let header = frame.get_page_header().expect("page header should be readable");
         let free_space_total = header.free_space_total;
         let next_free_space_offset = header.next_free_space_offset;
         let next_row_pointer_offset = header.next_row_pointer_offset;
         let last_transaction_id = header.last_transaction_id;
-        let page_id = header.page_id;
-        let next_page_id = header.next_page_id;
-        let prev_page_id = header.prev_page_id;
 
         assert_eq!(free_space_total, (PAGE_SIZE - PAGE_HEADER_SIZE) as u16);
         assert_eq!(next_free_space_offset, PAGE_HEADER_SIZE as u16);
         assert_eq!(next_row_pointer_offset, 0);
         assert_eq!(last_transaction_id, 7);
-        assert_eq!(page_id, 42);
-        assert_eq!(next_page_id, 0);
-        assert_eq!(prev_page_id, 0);
 
         let fs = frame.get_next_free_space()?;
         let fs_next_offset = fs.next_free_space_offset;
@@ -399,7 +385,7 @@ mod tests {
     #[test]
     fn insert_row_and_traverse_page_round_trips_data() -> Result<()> {
         let mut frame = new_frame();
-        frame.initialize(FrameType::Normal, 1, 100);
+        frame.initialize(FrameType::Normal, 100);
 
         let row = vec![field(b"abc"), field(b"de")];
         frame.insert_row(row, 99).expect("insert should succeed");
@@ -455,7 +441,7 @@ mod tests {
     #[test]
     fn insert_row_returns_error_when_page_has_not_enough_space() {
         let mut frame = new_frame();
-        frame.initialize(FrameType::Normal, 1, 100);
+        frame.initialize(FrameType::Normal, 100);
 
         let too_large_payload = vec![0_u8; PAGE_SIZE];
         let row = vec![field(too_large_payload.as_slice())];
@@ -467,7 +453,7 @@ mod tests {
     #[test]
     fn insert_then_read_same_row_by_returned_offset() -> Result<()> {
         let mut frame = new_frame();
-        frame.initialize(FrameType::Normal, 5, 10);
+        frame.initialize(FrameType::Normal, 10);
 
         let row = vec![field(b"first"), field(b"row")];
         let inserted_offset = frame
@@ -490,7 +476,7 @@ mod tests {
     #[test]
     fn traverse_page_returns_all_inserted_rows_in_pointer_order() -> Result<()> {
         let mut frame = new_frame();
-        frame.initialize(FrameType::Normal, 11, 50);
+        frame.initialize(FrameType::Normal, 50);
 
         let row1 = vec![field(b"r1")];
         let row2 = vec![field(b"r2a"), field(b"r2b")];
@@ -522,7 +508,7 @@ mod tests {
     #[test]
     fn page_header_and_free_space_are_updated_after_each_insert() {
         let mut frame = new_frame();
-        frame.initialize(FrameType::Normal, 7, 77);
+        frame.initialize(FrameType::Normal, 77);
 
         let initial_header = frame.get_page_header().expect("header should be readable");
         let initial_free = initial_header.free_space_total as usize;
@@ -532,10 +518,8 @@ mod tests {
         frame.insert_row(row1, 101).expect("row1 insert should succeed");
 
         let header_after_first = frame.get_page_header().expect("header should be readable");
-        let first_page_id = header_after_first.page_id;
         let first_last_txn = header_after_first.last_transaction_id;
         let first_next_row_ptr = header_after_first.next_row_pointer_offset;
-        assert_eq!(first_page_id, 7);
         assert_eq!(first_last_txn, 77);
         assert_eq!(first_next_row_ptr, PAGE_HEADER_SIZE as u16);
 
@@ -558,7 +542,7 @@ mod tests {
     #[test]
     fn insert_until_full_then_traverse_and_print_output() -> Result<()> {
         let mut frame = new_frame();
-        frame.initialize(FrameType::Normal, 99, 500);
+        frame.initialize(FrameType::Normal, 500);
 
         let mut inserted = 0usize;
         let mut next_txn = 1u32;
