@@ -1,4 +1,4 @@
-use super::parser::parse::parse_query;
+use super::support::initial_validation_of_query;
 use crate::{
     catalog::catalog::Catalog,
     config::config::Config,
@@ -25,7 +25,8 @@ impl Engine {
         // (6) Finally, return the result to the user
 
         // Parse
-        let ast = parse_query(query)?;
+        let ast = initial_validation_of_query(query)?;
+        println!("Parsed AST: {:?}", ast);
 
         // Binder, Validate againest the catalog and check the query is valid or not (data types check)
 

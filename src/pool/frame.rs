@@ -1,5 +1,8 @@
 use anyhow::{Result};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use crate::engine::txn::IsolLvl;
+use crate::engine::txn::txn::tk_row;
+
 use super::{
     PAGE_SIZE, PAGE_HEADER_SIZE, FREE_SPACE_HEADER_SIZE, ROW_POINTER_SIZE, ROW_HEADER_SIZE, FIELD_LENGTH_SIZE,
 };
@@ -38,7 +41,9 @@ use super::{
 
 pub enum FrameType {
     Normal = 0,
-    Index = 1,
+    TableMetadata = 1,
+    Index = 2,
+    IndexLeaf = 3,
 }
 
 #[repr(C, packed)]
@@ -84,7 +89,6 @@ pub struct Frame {
 }
 
 impl Frame {
-
     // Page initialization and header management
     pub fn initialize(&mut self, frame_type: FrameType, txn_id: u32) {
 
@@ -138,13 +142,26 @@ impl Frame {
             let row_header = self.get_row_header(row_pointer.row_offset as usize);
             let row_data = self.get_row_data(row_pointer.row_offset, row_header.length)?;
             rows.push((row_header, row_data));
-            println!("Traversed row at offset {}", row_pointer_offset);
             row_pointer_offset -= ROW_POINTER_SIZE;
-            println!("Next row pointer offset: {}", row_pointer_offset);
         }
         Ok(rows)
     }
 
+    pub fn retrieve_active_rows(&self, current_txn: u32, isol_lvl: IsolLvl) -> Result<Vec<Vec<FieldData>>> {
+        let mut rows = Vec::new();
+        let page_header = self.get_page_header()?;
+        let mut row_pointer_offset = page_header.next_row_pointer_offset as usize;
+        while row_pointer_offset >= PAGE_HEADER_SIZE {
+            let row_pointer = RowPointer::read_from_bytes(&self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE]).expect("Buffer size should match RowPointer layout perfectly");
+            let row_header = self.get_row_header(row_pointer.row_offset as usize);
+            let row_data = self.get_row_data(row_pointer.row_offset, row_header.length)?;
+            if tk_row(current_txn, isol_lvl, row_header.tmin, row_header.tmax) {
+                rows.push(row_data);
+            }
+            row_pointer_offset -= ROW_POINTER_SIZE;
+        }
+        Ok(rows)
+    }
 
     // Row management
     pub fn get_row_pointer(&self, row_index: usize) -> RowPointer {

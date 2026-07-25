@@ -17,8 +17,8 @@ pub struct FrameList {
     pub size: usize,
 }
 struct BufPl {
-    pub old_list: FrameList,
-    pub new_list: FrameList,
+    pub old_list: Arc<RwLock<FrameList>>,
+    pub new_list: Arc<RwLock<FrameList>>,
     pub max_mem_usage: usize,
     pub current_mem_usage: usize,
 }

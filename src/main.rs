@@ -25,6 +25,9 @@ fn main() -> Result<()> {
     // initialize Engine.
     let engine = std::sync::Arc::new(Engine::new(config.clone()));
 
+
+    // engine loading TODO
+
     let listener = TcpListener::bind(format!("{}:{}", config.host, config.port))?;
 
     for stream in listener.incoming() {
@@ -42,23 +45,6 @@ fn main() -> Result<()> {
         let engine_cloned = engine.clone();
 
         thread::spawn(move || {
-            // check startup validation first
-
-            let mut buffer: [u8; 1024] = [0; 1024];
-            let bytes_read = match stream.read(&mut buffer) {
-                Ok(bytes_read) => bytes_read,
-                Err(e) => {
-                    eprintln!("Failed to read from stream: {}", e);
-                    // close the connection
-                    return;
-                }
-            };
-
-            if bytes_read == 0 {
-                eprintln!("No data received from stream");
-                return;
-            }
-
             connection_handler(stream, engine_cloned);
         });
     }

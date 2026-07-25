@@ -2,7 +2,7 @@ use sqlparser::{ast::Statement, dialect::GenericDialect, parser::Parser};
 
 use crate::engine::error::ProcessingError;
 
-pub fn parse_query(query: &str) -> Result<Vec<Statement>, ProcessingError> {
+pub fn initial_validation_of_query(query: &str) -> Result<Vec<Statement>, ProcessingError> {
     let dialect = GenericDialect {};
     let ast = Parser::parse_sql(&dialect, query);
     match ast {
@@ -23,6 +23,7 @@ pub fn parse_query(query: &str) -> Result<Vec<Statement>, ProcessingError> {
                     Statement::Update { .. } => {}
                     Statement::Delete { .. } => {}
                     Statement::StartTransaction { .. } => {}
+                    Statement::Rollback { .. } => {}
                     Statement::Commit { .. } => {}
                     // Statement::Drop { .. } => {},
                     _ => {
