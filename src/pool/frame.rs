@@ -1,10 +1,9 @@
-use anyhow::{Result};
+use anyhow::Result;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
-use crate::engine::txn::IsolLvl;
-use crate::engine::txn::txn::tk_row;
 
-use super::{
-    PAGE_SIZE, PAGE_HEADER_SIZE, FREE_SPACE_HEADER_SIZE, ROW_POINTER_SIZE, ROW_HEADER_SIZE, FIELD_LENGTH_SIZE,
+use super::super::constants::{
+    FIELD_LENGTH_SIZE, FREE_SPACE_HEADER_SIZE, PAGE_HEADER_SIZE, PAGE_SIZE, ROW_HEADER_SIZE,
+    ROW_POINTER_SIZE,
 };
 
 /// The physical normal page in disk
@@ -12,28 +11,28 @@ use super::{
 /// [Page Header][Row Header][Row Data]
 /// Page Header (23 bytes):
 ///         [Page Type (1 byte)]
-/// 
+///
 ///         [Free Space Total (2 bytes)]
 ///         [Next Free Space Offset (2 bytes)]
 ///         [Next Row Pointer Offset (2 bytes)]
-/// 
+///
 ///         [Last transaction ID (4 bytes)]
-/// 
+///
 ///  Note: page number = offset / PAGE_SIZE
-/// 
+///
 /// Free Space Header (4 bytes):
 ///         [Next Free Space Offset (2 bytes)]
 ///         [Free Space Size (2 bytes)]
-/// 
+///
 /// Row Pointer (2 bytes):
 ///      [Row Offset (2 bytes)]
-/// 
+///
 /// Row header layout (10 bytes):
 ///      [Tmin (4 bytes)][Tmax (4 bytes)][Length (2 bytes)] + [Row Data (variable length)]
-/// 
+///
 /// Row Data layout:
 ///      [Field Length (2 bytes)][Field Data (variable length)][Field Length (2 bytes)][Field Data (variable length)]...
-/// 
+///
 /// TODO: enable HOT using cid
 
 #[repr(u8)]
@@ -91,7 +90,6 @@ pub struct Frame {
 impl Frame {
     // Page initialization and header management
     pub fn initialize(&mut self, frame_type: FrameType, txn_id: u32) {
-
         // Add the page header
         let page_header = PageHeader {
             tp: frame_type,
@@ -109,7 +107,8 @@ impl Frame {
 
         let page_header_bytes = page_header.as_bytes();
         self.data[0..PAGE_HEADER_SIZE].copy_from_slice(page_header_bytes);
-        self.data[PAGE_HEADER_SIZE..PAGE_HEADER_SIZE + FREE_SPACE_HEADER_SIZE].copy_from_slice(free_space_header.as_bytes());   
+        self.data[PAGE_HEADER_SIZE..PAGE_HEADER_SIZE + FREE_SPACE_HEADER_SIZE]
+            .copy_from_slice(free_space_header.as_bytes());
     }
 
     pub fn get_page_header(&self) -> Result<PageHeader> {
@@ -127,7 +126,8 @@ impl Frame {
     pub fn get_next_free_space(&self) -> Result<FreeSpaceHeader> {
         let page_header = self.get_page_header()?;
         let offset = page_header.next_free_space_offset as usize;
-        match FreeSpaceHeader::read_from_bytes(&self.data[offset..offset + FREE_SPACE_HEADER_SIZE]) {
+        match FreeSpaceHeader::read_from_bytes(&self.data[offset..offset + FREE_SPACE_HEADER_SIZE])
+        {
             Ok(free_space_header) => Ok(free_space_header),
             Err(e) => Err(anyhow::anyhow!("Failed to read free space header: {}", e)),
         }
@@ -138,7 +138,10 @@ impl Frame {
         let page_header = self.get_page_header()?;
         let mut row_pointer_offset = page_header.next_row_pointer_offset as usize;
         while row_pointer_offset >= PAGE_HEADER_SIZE {
-            let row_pointer = RowPointer::read_from_bytes(&self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE]).expect("Buffer size should match RowPointer layout perfectly");
+            let row_pointer = RowPointer::read_from_bytes(
+                &self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE],
+            )
+            .expect("Buffer size should match RowPointer layout perfectly");
             let row_header = self.get_row_header(row_pointer.row_offset as usize);
             let row_data = self.get_row_data(row_pointer.row_offset, row_header.length)?;
             rows.push((row_header, row_data));
@@ -147,17 +150,19 @@ impl Frame {
         Ok(rows)
     }
 
-    pub fn retrieve_active_rows(&self, current_txn: u32, isol_lvl: IsolLvl) -> Result<Vec<Vec<FieldData>>> {
+    // TODO: Implement a method to retrieve only the active rows (i.e., rows that are not deleted or marked as inactive) from the page. This will involve checking the transaction IDs and any other relevant metadata to determine the status of each row.
+    pub fn retrieve_active_rows(&self) -> Result<Vec<Vec<FieldData>>> {
         let mut rows = Vec::new();
         let page_header = self.get_page_header()?;
         let mut row_pointer_offset = page_header.next_row_pointer_offset as usize;
         while row_pointer_offset >= PAGE_HEADER_SIZE {
-            let row_pointer = RowPointer::read_from_bytes(&self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE]).expect("Buffer size should match RowPointer layout perfectly");
+            let row_pointer = RowPointer::read_from_bytes(
+                &self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE],
+            )
+            .expect("Buffer size should match RowPointer layout perfectly");
             let row_header = self.get_row_header(row_pointer.row_offset as usize);
             let row_data = self.get_row_data(row_pointer.row_offset, row_header.length)?;
-            if tk_row(current_txn, isol_lvl, row_header.tmin, row_header.tmax) {
-                rows.push(row_data);
-            }
+            rows.push(row_data);
             row_pointer_offset -= ROW_POINTER_SIZE;
         }
         Ok(rows)
@@ -166,15 +171,22 @@ impl Frame {
     // Row management
     pub fn get_row_pointer(&self, row_index: usize) -> RowPointer {
         let row_pointer_offset = PAGE_HEADER_SIZE + (row_index * ROW_POINTER_SIZE);
-        RowPointer::read_from_bytes(&self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE]).expect("Buffer size should match RowPointer layout perfectly")
+        RowPointer::read_from_bytes(
+            &self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE],
+        )
+        .expect("Buffer size should match RowPointer layout perfectly")
     }
 
     pub fn get_row_pointer_by_offset(&self, row_pointer_offset: usize) -> RowPointer {
-        RowPointer::read_from_bytes(&self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE]).expect("Buffer size should match RowPointer layout perfectly")
+        RowPointer::read_from_bytes(
+            &self.data[row_pointer_offset..row_pointer_offset + ROW_POINTER_SIZE],
+        )
+        .expect("Buffer size should match RowPointer layout perfectly")
     }
 
     pub fn get_row_header(&self, row_offset: usize) -> RowHeader {
-        RowHeader::read_from_bytes(&self.data[row_offset..row_offset + ROW_HEADER_SIZE]).expect("Buffer size should match RowHeader layout perfectly")
+        RowHeader::read_from_bytes(&self.data[row_offset..row_offset + ROW_HEADER_SIZE])
+            .expect("Buffer size should match RowHeader layout perfectly")
     }
 
     pub fn set_row_header(&mut self, row_offset: usize, row_header: RowHeader) {
@@ -189,14 +201,20 @@ impl Frame {
 
         while remaining_len > 0 {
             let field_length = if cfg!(target_endian = "little") {
-                u16::from_le_bytes(self.data[offset..offset + FIELD_LENGTH_SIZE].try_into()?) as usize
+                u16::from_le_bytes(self.data[offset..offset + FIELD_LENGTH_SIZE].try_into()?)
+                    as usize
             } else {
                 let field_length_bytes = &self.data[offset..offset + FIELD_LENGTH_SIZE];
                 u16::from_be_bytes(field_length_bytes.try_into()?) as usize
             };
 
-            let field_data = self.data[offset + FIELD_LENGTH_SIZE..offset + FIELD_LENGTH_SIZE + field_length].to_vec();
-            row_data.push(FieldData { length: field_length as u16, data: field_data });
+            let field_data = self.data
+                [offset + FIELD_LENGTH_SIZE..offset + FIELD_LENGTH_SIZE + field_length]
+                .to_vec();
+            row_data.push(FieldData {
+                length: field_length as u16,
+                data: field_data,
+            });
             offset += FIELD_LENGTH_SIZE + field_length;
             remaining_len -= FIELD_LENGTH_SIZE + field_length;
         }
@@ -206,20 +224,26 @@ impl Frame {
 
     // Free Space Management
     pub fn get_free_space_header(&self, offset: usize) -> FreeSpaceHeader {
-        FreeSpaceHeader::read_from_bytes(&self.data[offset..offset + FREE_SPACE_HEADER_SIZE]).expect("Buffer size should match FreeSpaceHeader layout perfectly")
+        FreeSpaceHeader::read_from_bytes(&self.data[offset..offset + FREE_SPACE_HEADER_SIZE])
+            .expect("Buffer size should match FreeSpaceHeader layout perfectly")
     }
 
     // Row DDL (Insert, Update, Delete) operations
     pub fn insert_row(&mut self, row_data: Vec<FieldData>, txn_id: u32) -> Result<u16> {
-        let row_data_size = row_data.iter().map(|field| FIELD_LENGTH_SIZE + field.length as usize).sum::<usize>();
+        let row_data_size = row_data
+            .iter()
+            .map(|field| FIELD_LENGTH_SIZE + field.length as usize)
+            .sum::<usize>();
         let total_row_size = ROW_HEADER_SIZE + row_data_size;
 
         let page_header = self.get_page_header().expect("Failed to read page header");
-       
+
         let page_total_free_space = page_header.free_space_total as usize;
 
         if total_row_size > page_total_free_space {
-            return Err(anyhow::anyhow!("Not enough space in the page to insert the row"));
+            return Err(anyhow::anyhow!(
+                "Not enough space in the page to insert the row"
+            ));
         }
 
         let mut next_free_space_offset = page_header.next_free_space_offset as usize;
@@ -241,7 +265,8 @@ impl Frame {
                     };
 
                     let row_header_bytes = row_header.as_bytes();
-                    self.data[next_free_space_offset..next_free_space_offset + ROW_HEADER_SIZE].copy_from_slice(&row_header_bytes);
+                    self.data[next_free_space_offset..next_free_space_offset + ROW_HEADER_SIZE]
+                        .copy_from_slice(&row_header_bytes);
 
                     // Write the row data
                     let mut data_offset = next_free_space_offset + ROW_HEADER_SIZE;
@@ -251,26 +276,31 @@ impl Frame {
                         } else {
                             field.length.to_be_bytes()
                         };
-                        self.data[data_offset..data_offset + FIELD_LENGTH_SIZE].copy_from_slice(&field_length_bytes);
+                        self.data[data_offset..data_offset + FIELD_LENGTH_SIZE]
+                            .copy_from_slice(&field_length_bytes);
                         data_offset += FIELD_LENGTH_SIZE;
-                        self.data[data_offset..data_offset + field.length as usize].copy_from_slice(&field.data);
+                        self.data[data_offset..data_offset + field.length as usize]
+                            .copy_from_slice(&field.data);
                         data_offset += field.length as usize;
                     }
 
                     // first let's move the existing free space header, so we can add the row pointer at the end of the page.
-                    let mut first_free_space_header = self.get_free_space_header(first_free_space_offset);
+                    let mut first_free_space_header =
+                        self.get_free_space_header(first_free_space_offset);
                     first_free_space_header.free_space_size -= ROW_POINTER_SIZE as u16;
                     let first_free_space_header_bytes = first_free_space_header.as_bytes();
                     let new_free_space_offset = first_free_space_offset + ROW_POINTER_SIZE;
-                    self.data[new_free_space_offset..new_free_space_offset + FREE_SPACE_HEADER_SIZE].copy_from_slice(&first_free_space_header_bytes);
+                    self.data
+                        [new_free_space_offset..new_free_space_offset + FREE_SPACE_HEADER_SIZE]
+                        .copy_from_slice(&first_free_space_header_bytes);
 
-                    
                     // Add the row pointer
                     let row_pointer = RowPointer {
                         row_offset: next_free_space_offset as u16,
                     };
                     let row_pointer_bytes = row_pointer.as_bytes();
-                    self.data[first_free_space_offset ..first_free_space_offset + ROW_POINTER_SIZE].copy_from_slice(&row_pointer_bytes);
+                    self.data[first_free_space_offset..first_free_space_offset + ROW_POINTER_SIZE]
+                        .copy_from_slice(&row_pointer_bytes);
 
                     // Update the page header
                     let mut updated_page_header = page_header;
@@ -284,7 +314,10 @@ impl Frame {
                     return Ok(next_free_space_offset as u16);
                 }
             } else if free_space_header.free_space_size as usize > total_row_size {
-                if next_free_space_offset == first_free_space_offset && ((free_space_header.free_space_size as usize) < (FREE_SPACE_HEADER_SIZE + ROW_POINTER_SIZE + total_row_size)) {
+                if next_free_space_offset == first_free_space_offset
+                    && ((free_space_header.free_space_size as usize)
+                        < (FREE_SPACE_HEADER_SIZE + ROW_POINTER_SIZE + total_row_size))
+                {
                     next_free_space_offset = free_space_header.next_free_space_offset as usize;
                     continue;
                 }
@@ -296,8 +329,11 @@ impl Frame {
                 };
 
                 let row_header_bytes = row_header.as_bytes();
-                let final_offset = next_free_space_offset + free_space_header.free_space_size as usize - total_row_size;
-                self.data[final_offset..final_offset + ROW_HEADER_SIZE].copy_from_slice(&row_header_bytes);
+                let final_offset = next_free_space_offset
+                    + free_space_header.free_space_size as usize
+                    - total_row_size;
+                self.data[final_offset..final_offset + ROW_HEADER_SIZE]
+                    .copy_from_slice(&row_header_bytes);
 
                 // Write the row data
                 let mut data_offset = final_offset + ROW_HEADER_SIZE;
@@ -307,9 +343,11 @@ impl Frame {
                     } else {
                         field.length.to_be_bytes()
                     };
-                    self.data[data_offset..data_offset + FIELD_LENGTH_SIZE].copy_from_slice(&field_length_bytes);
+                    self.data[data_offset..data_offset + FIELD_LENGTH_SIZE]
+                        .copy_from_slice(&field_length_bytes);
                     data_offset += FIELD_LENGTH_SIZE;
-                    self.data[data_offset..data_offset + field.length as usize].copy_from_slice(&field.data);
+                    self.data[data_offset..data_offset + field.length as usize]
+                        .copy_from_slice(&field.data);
                     data_offset += field.length as usize;
                 }
 
@@ -317,8 +355,8 @@ impl Frame {
                 let mut updated_free_space_header = free_space_header;
                 updated_free_space_header.free_space_size -= total_row_size as u16;
                 let updated_free_space_header_bytes = updated_free_space_header.as_bytes();
-                self.data[next_free_space_offset..next_free_space_offset + FREE_SPACE_HEADER_SIZE].copy_from_slice(&updated_free_space_header_bytes);
-
+                self.data[next_free_space_offset..next_free_space_offset + FREE_SPACE_HEADER_SIZE]
+                    .copy_from_slice(&updated_free_space_header_bytes);
 
                 // Add the row pointer
                 let row_pointer = RowPointer {
@@ -327,27 +365,34 @@ impl Frame {
                 let row_pointer_bytes = row_pointer.as_bytes();
 
                 let first_free_space_header = self.get_free_space_header(first_free_space_offset);
-                self.data[first_free_space_offset..first_free_space_offset + ROW_POINTER_SIZE].copy_from_slice(&row_pointer_bytes);
+                self.data[first_free_space_offset..first_free_space_offset + ROW_POINTER_SIZE]
+                    .copy_from_slice(&row_pointer_bytes);
 
                 // Update the first free space header
                 let mut updated_first_free_space_header = first_free_space_header;
                 updated_first_free_space_header.free_space_size -= ROW_POINTER_SIZE as u16;
-                let updated_first_free_space_header_bytes = updated_first_free_space_header.as_bytes();
-                self.data[first_free_space_offset + ROW_POINTER_SIZE..first_free_space_offset + FREE_SPACE_HEADER_SIZE + ROW_POINTER_SIZE].copy_from_slice(updated_first_free_space_header_bytes);
+                let updated_first_free_space_header_bytes =
+                    updated_first_free_space_header.as_bytes();
+                self.data[first_free_space_offset + ROW_POINTER_SIZE
+                    ..first_free_space_offset + FREE_SPACE_HEADER_SIZE + ROW_POINTER_SIZE]
+                    .copy_from_slice(updated_first_free_space_header_bytes);
 
                 // Update the page header
                 let mut updated_page_header = page_header;
                 updated_page_header.free_space_total -= total_row_size as u16;
                 updated_page_header.free_space_total -= ROW_POINTER_SIZE as u16;
-                updated_page_header.next_free_space_offset = (first_free_space_offset + ROW_POINTER_SIZE) as u16;
+                updated_page_header.next_free_space_offset =
+                    (first_free_space_offset + ROW_POINTER_SIZE) as u16;
                 updated_page_header.next_row_pointer_offset = first_free_space_offset as u16;
                 self.set_page_header(updated_page_header);
 
                 return Ok(final_offset as u16);
-            } 
+            }
             next_free_space_offset = free_space_header.next_free_space_offset as usize;
         }
-        return Err(anyhow::anyhow!("Not enough space in the page to insert the row"));
+        return Err(anyhow::anyhow!(
+            "Not enough space in the page to insert the row"
+        ));
     }
 }
 
@@ -380,7 +425,9 @@ mod tests {
         let mut frame = new_frame();
         frame.initialize(FrameType::Normal, 7);
 
-        let header = frame.get_page_header().expect("page header should be readable");
+        let header = frame
+            .get_page_header()
+            .expect("page header should be readable");
         let free_space_total = header.free_space_total;
         let next_free_space_offset = header.next_free_space_offset;
         let next_row_pointer_offset = header.next_row_pointer_offset;
@@ -417,11 +464,16 @@ mod tests {
                 ri, dbg_tmin, dbg_tmax, dbg_len
             );
             for (fi, field) in fields.iter().enumerate() {
-                println!("  Field {}: length={}, data={:?}", fi, field.length, field.data);
+                println!(
+                    "  Field {}: length={}, data={:?}",
+                    fi, field.length, field.data
+                );
             }
         }
 
-        let page_header = frame.get_page_header().expect("page header should be readable");
+        let page_header = frame
+            .get_page_header()
+            .expect("page header should be readable");
         let free_space_total = page_header.free_space_total;
         let next_free_space_offset = page_header.next_free_space_offset;
         let next_row_pointer_offset = page_header.next_row_pointer_offset;
@@ -430,7 +482,11 @@ mod tests {
             free_space_total, next_free_space_offset, next_row_pointer_offset
         );
 
-        println!("Sum of used space: {}", (PAGE_HEADER_SIZE + ROW_POINTER_SIZE + ROW_HEADER_SIZE + 5 + 2 * FIELD_LENGTH_SIZE) as usize);
+        println!(
+            "Sum of used space: {}",
+            (PAGE_HEADER_SIZE + ROW_POINTER_SIZE + ROW_HEADER_SIZE + 5 + 2 * FIELD_LENGTH_SIZE)
+                as usize
+        );
 
         assert_eq!(rows.len(), 1);
 
@@ -448,9 +504,14 @@ mod tests {
         assert_eq!(fields[1].length, 2);
         assert_eq!(fields[1].data, b"de");
 
-        let header = frame.get_page_header().expect("page header should be readable");
+        let header = frame
+            .get_page_header()
+            .expect("page header should be readable");
         let free_space_total = header.free_space_total;
-        assert_eq!(free_space_total, ((PAGE_SIZE - PAGE_HEADER_SIZE) - (ROW_HEADER_SIZE + 9) - ROW_POINTER_SIZE) as u16);
+        assert_eq!(
+            free_space_total,
+            ((PAGE_SIZE - PAGE_HEADER_SIZE) - (ROW_HEADER_SIZE + 9) - ROW_POINTER_SIZE) as u16
+        );
 
         Ok(())
     }
@@ -499,9 +560,15 @@ mod tests {
         let row2 = vec![field(b"r2a"), field(b"r2b")];
         let row3 = vec![field(b"r3")];
 
-        frame.insert_row(row1, 1).expect("row1 insert should succeed");
-        frame.insert_row(row2, 2).expect("row2 insert should succeed");
-        frame.insert_row(row3, 3).expect("row3 insert should succeed");
+        frame
+            .insert_row(row1, 1)
+            .expect("row1 insert should succeed");
+        frame
+            .insert_row(row2, 2)
+            .expect("row2 insert should succeed");
+        frame
+            .insert_row(row3, 3)
+            .expect("row3 insert should succeed");
 
         let rows = frame.traverse_page()?;
         assert_eq!(rows.len(), 3);
@@ -532,7 +599,9 @@ mod tests {
 
         let row1 = vec![field(b"aa")];
         let row1_payload = row_payload_len(&row1);
-        frame.insert_row(row1, 101).expect("row1 insert should succeed");
+        frame
+            .insert_row(row1, 101)
+            .expect("row1 insert should succeed");
 
         let header_after_first = frame.get_page_header().expect("header should be readable");
         let first_last_txn = header_after_first.last_transaction_id;
@@ -540,20 +609,36 @@ mod tests {
         assert_eq!(first_last_txn, 77);
         assert_eq!(first_next_row_ptr, PAGE_HEADER_SIZE as u16);
 
-        let expected_after_first = initial_free - (ROW_HEADER_SIZE + row1_payload + ROW_POINTER_SIZE);
-        assert_eq!(header_after_first.free_space_total as usize, expected_after_first);
+        let expected_after_first =
+            initial_free - (ROW_HEADER_SIZE + row1_payload + ROW_POINTER_SIZE);
+        assert_eq!(
+            header_after_first.free_space_total as usize,
+            expected_after_first
+        );
 
         let row2 = vec![field(b"bbbb"), field(b"cc")];
         let row2_payload = row_payload_len(&row2);
-        frame.insert_row(row2, 102).expect("row2 insert should succeed");
+        frame
+            .insert_row(row2, 102)
+            .expect("row2 insert should succeed");
 
         let header_after_second = frame.get_page_header().expect("header should be readable");
-        let expected_after_second = expected_after_first - (ROW_HEADER_SIZE + row2_payload + ROW_POINTER_SIZE);
-        assert_eq!(header_after_second.free_space_total as usize, expected_after_second);
+        let expected_after_second =
+            expected_after_first - (ROW_HEADER_SIZE + row2_payload + ROW_POINTER_SIZE);
+        assert_eq!(
+            header_after_second.free_space_total as usize,
+            expected_after_second
+        );
         let second_next_row_ptr = header_after_second.next_row_pointer_offset;
         let second_next_free_ptr = header_after_second.next_free_space_offset;
-        assert_eq!(second_next_row_ptr, (PAGE_HEADER_SIZE + ROW_POINTER_SIZE) as u16);
-        assert_eq!(second_next_free_ptr, (PAGE_HEADER_SIZE + 2 * ROW_POINTER_SIZE) as u16);
+        assert_eq!(
+            second_next_row_ptr,
+            (PAGE_HEADER_SIZE + ROW_POINTER_SIZE) as u16
+        );
+        assert_eq!(
+            second_next_free_ptr,
+            (PAGE_HEADER_SIZE + 2 * ROW_POINTER_SIZE) as u16
+        );
     }
 
     #[test]
@@ -591,7 +676,9 @@ mod tests {
             }
         }
 
-        let header = frame.get_page_header().expect("page header should be readable");
+        let header = frame
+            .get_page_header()
+            .expect("page header should be readable");
         let free_space_total = header.free_space_total;
         let next_free_space_offset = header.next_free_space_offset;
         let next_row_pointer_offset = header.next_row_pointer_offset;
@@ -599,12 +686,24 @@ mod tests {
         let first_free_space_header = frame.get_free_space_header(next_free_space_offset as usize);
         println!(
             "Final header => free_space_total={}, next_free_space_offset={}, next_row_pointer_offset={}, last_inserted_ptr={:?}, first_free_space_header={:?}",
-            free_space_total, next_free_space_offset, next_row_pointer_offset, last_inserted_ptr, first_free_space_header
+            free_space_total,
+            next_free_space_offset,
+            next_row_pointer_offset,
+            last_inserted_ptr,
+            first_free_space_header
         );
 
         assert!(inserted > 0, "at least one row should be inserted");
-        println!("Total rows traversed: {}, total inserted: {}", rows.len(), inserted);
-        assert_eq!(rows.len(), inserted, "traversal should return all inserted rows");
+        println!(
+            "Total rows traversed: {}, total inserted: {}",
+            rows.len(),
+            inserted
+        );
+        assert_eq!(
+            rows.len(),
+            inserted,
+            "traversal should return all inserted rows"
+        );
         Ok(())
     }
 }

@@ -1,15 +1,12 @@
-use config::config::Config;
-use std::io::{Read, Result, Write};
+use anyhow::Result;
+use bluedb::config::config::Config;
+use bluedb::engine::engine::Engine;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
-use tracing::info;
+use tracing::{error, info};
 
-mod config;
-mod catalog;
-mod pool;
-mod engine;
-use engine::engine::Engine;
 fn main() -> Result<()> {
     // initialize logging
     tracing_subscriber::fmt()
@@ -23,10 +20,15 @@ fn main() -> Result<()> {
     let config = Config::new();
 
     // initialize Engine.
-    let engine = std::sync::Arc::new(Engine::new(config.clone()));
-
-
-    // engine loading TODO
+    let mut engine = Engine::new(config.clone());
+    match engine.initialize() {
+        Ok(_) => info!("Engine initialized successfully."),
+        Err(e) => {
+            error!("Failed to initialize Engine: {:?}", e);
+            return Err(anyhow::anyhow!("Engine initialization failed"));
+        }
+    }
+    let engine = Arc::new(engine);
 
     let listener = TcpListener::bind(format!("{}:{}", config.host, config.port))?;
 
@@ -70,21 +72,27 @@ fn connection_handler(mut stream: TcpStream, engine: Arc<Engine>) {
         let query = String::from_utf8_lossy(&buffer[..bytes_read]);
 
         let response = match engine.process_query(&query) {
-            Ok(result) => String::from_utf8_lossy(result.as_slice()).into_owned(),
-            Err(e) => format!("Error processing query: {:?}", e),
+            Ok(result) => serde_json::to_vec(&result),
+            Err(e) => serde_json::to_vec(&format!("Error processing query: {:?}", e)),
         };
 
-        if response.is_empty() {
-            let empty_response = "Query executed successfully, but no data to return.".to_string();
-            if let Err(e) = stream.write_all(empty_response.as_bytes()) {
-                eprintln!("Failed to write to stream: {}", e);
-                return;
+        if let Ok(response) = response {
+            if response.is_empty() {
+                let empty_response =
+                    "Query executed successfully, but no data to return.".to_string();
+                if let Err(e) = stream.write_all(empty_response.as_bytes()) {
+                    eprintln!("Failed to write to stream: {}", e);
+                    return;
+                }
+            } else {
+                if let Err(e) = stream.write_all(&response) {
+                    eprintln!("Failed to write to stream: {}", e);
+                    return;
+                }
             }
         } else {
-            if let Err(e) = stream.write_all(response.as_bytes()) {
-                eprintln!("Failed to write to stream: {}", e);
-                return;
-            }
+            eprintln!("Failed to serialize response");
+            return;
         }
     }
 }

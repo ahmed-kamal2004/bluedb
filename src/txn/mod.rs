@@ -1,5 +1,5 @@
-pub mod txn;
 pub mod clog;
+pub mod txn;
 
 use std::sync::{Arc, RwLock};
 

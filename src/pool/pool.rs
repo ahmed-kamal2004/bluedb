@@ -1,6 +1,6 @@
-use std::sync::RwLock;
-use std::sync::Arc;
 use super::frame::Frame;
+use std::sync::Arc;
+use std::sync::RwLock;
 
 pub struct FrameWrpr {
     pub frame: RwLock<Frame>,
@@ -9,7 +9,6 @@ pub struct FrameWrpr {
     pub is_pinned: bool,
     pub is_in_use: bool,
 }
-
 
 pub struct FrameList {
     pub head: Option<Arc<FrameWrpr>>,
