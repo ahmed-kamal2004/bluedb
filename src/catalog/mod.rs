@@ -26,7 +26,7 @@ impl Catalog {
         Ok(())
     }
 
-    pub fn create_table(&mut self, storage_manager: Arc<StorageManager>, rel: Rel) -> Result<bool> {
+    pub fn create_table(&self, storage_manager: Arc<StorageManager>, rel: Rel) -> Result<bool> {
         let mut write_guard = self.rels.write().unwrap();
         // first, check if the table already exists
         if write_guard.contains_key(&rel.nm) {
@@ -48,7 +48,7 @@ impl Catalog {
     }
 
     pub fn delete_rel_by_name(
-        &mut self,
+        &self,
         rel_name: &str,
         storage_manager: Arc<StorageManager>,
     ) -> Result<bool> {
@@ -62,7 +62,7 @@ impl Catalog {
     }
 
     pub fn delete_rel_by_id(
-        &mut self,
+        &self,
         rel_id: u32,
         storage_manager: Arc<StorageManager>,
     ) -> Result<bool> {

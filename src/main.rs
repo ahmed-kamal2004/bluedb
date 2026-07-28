@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bluedb::config::config::Config;
 use bluedb::engine::engine::Engine;
+use bluedb::result::QueryResult;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
@@ -73,22 +74,23 @@ fn connection_handler(mut stream: TcpStream, engine: Arc<Engine>) {
 
         let response = match engine.process_query(&query) {
             Ok(result) => serde_json::to_vec(&result),
-            Err(e) => serde_json::to_vec(&format!("Error processing query: {:?}", e)),
+            Err(e) => {
+                let error_result = QueryResult::Error {
+                    message: format!("Error processing query: {}", e),
+                };
+                serde_json::to_vec(&error_result)
+            }
         };
 
         if let Ok(response) = response {
-            if response.is_empty() {
-                let empty_response =
-                    "Query executed successfully, but no data to return.".to_string();
-                if let Err(e) = stream.write_all(empty_response.as_bytes()) {
-                    eprintln!("Failed to write to stream: {}", e);
-                    return;
-                }
-            } else {
-                if let Err(e) = stream.write_all(&response) {
-                    eprintln!("Failed to write to stream: {}", e);
-                    return;
-                }
+            let len = response.len();
+
+            if let Err(e) = stream.write_all(&len.to_be_bytes()) {
+                error!("Failed to send response length to client: {:?}", e);
+            }
+
+            if let Err(e) = stream.write_all(&response) {
+                error!("Failed to send response to client: {:?}", e);
             }
         } else {
             eprintln!("Failed to serialize response");

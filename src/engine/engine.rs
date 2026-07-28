@@ -39,20 +39,23 @@ impl Engine {
         // Initialize the catalog
         let mut catalog = Catalog::new();
         match catalog.load(storage_manager.clone()) {
-            Ok(_) => {
-                self.catalog = Some(Arc::new(catalog));
-                info!(
-                    "Catalog loaded successfully with {} relations.",
-                    self.catalog.as_ref().unwrap().rels.read().unwrap().len()
-                );
-            }
+            Ok(_) => {}
             Err(e) => {
                 return Err(anyhow::anyhow!("Failed to load catalog: {:?}", e));
             }
         }
 
+        self.catalog = Some(Arc::new(catalog));
+        info!(
+            "Catalog loaded successfully with {} relations.",
+            self.catalog.as_ref().unwrap().rels.read().unwrap().len()
+        );
+
         // Initialize the executor
-        let executor = Executor::new(storage_manager.clone());
+        let executor = Executor::new(
+            storage_manager.clone(),
+            self.catalog.as_ref().unwrap().clone(),
+        );
         self.executor = Some(Arc::new(executor));
         info!("Executor initialized successfully.");
 

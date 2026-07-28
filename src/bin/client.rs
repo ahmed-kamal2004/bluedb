@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bluedb::result::QueryResult;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 use serde_json;
 use std::env;
 use std::io::{Read, Write};
@@ -17,36 +18,61 @@ fn main() -> Result<()> {
     let source_port = stream.local_addr()?.port();
     let source_ip = stream.local_addr()?.ip();
 
-    let prompt = format!("testdb({}:{}) <-> ", source_ip, source_port);
-
+    let mut buffer = String::new();
     loop {
-        let line = rl.readline(&prompt).expect("Failed to read line");
+        let prompt = if buffer.is_empty() {
+            format!("testdb({}:{}) <-> ", source_ip, source_port)
+        } else {
+            "...> ".to_string()
+        };
 
-        if line.trim() == "exit" {
+        let line = match rl.readline(&prompt) {
+            Ok(line) => line,
+            Err(ReadlineError::Interrupted) => {
+                buffer.clear();
+                println!("^C");
+                continue;
+            }
+            Err(ReadlineError::Eof) => {
+                println!("exit");
+                break;
+            }
+            Err(e) => {
+                eprintln!("Error reading line: {:?}", e);
+                break;
+            }
+        };
+
+        if buffer.is_empty() && line.trim() == "exit" {
             break;
         }
 
-        stream
-            .write_all(line.as_bytes())
-            .expect("Failed to send data to server");
+        buffer.push_str(&line);
+        buffer.push('\n');
 
-        let mut buffer = [0; 4096];
-        let mut bytes_read = stream
-            .read(&mut buffer)
-            .expect("Failed to read response from server");
-        let mut total_response = Vec::new();
-        total_response.extend_from_slice(&buffer[..bytes_read]);
-        while bytes_read != 0 && buffer[bytes_read - 1] != b'\n' {
-            let bytes_read = stream
-                .read(&mut buffer)
-                .expect("Failed to read additional response from server");
-            total_response.extend_from_slice(&buffer[..bytes_read]);
+        if line.trim_end().ends_with(';') {
+            stream
+                .write_all(line.as_bytes())
+                .expect("Failed to send data to server");
+
+            let mut len_buf = [0u8; 8];
+            stream
+                .read_exact(&mut len_buf)
+                .expect("Failed to read response length");
+            let len = u64::from_be_bytes(len_buf) as usize;
+
+            let mut payload = vec![0u8; len];
+            stream
+                .read_exact(&mut payload)
+                .expect("Failed to read response payload");
+
+            let response: QueryResult =
+                serde_json::from_slice(&payload).expect("Failed to parse response from server");
+
+            println!("\n\t>--> \n{}", response);
+
+            buffer.clear();
         }
-
-        let response: QueryResult =
-            serde_json::from_slice(&total_response).expect("Failed to parse response from server");
-
-        println!("\n\tResponse <> \n{}", response);
     }
 
     Ok(())

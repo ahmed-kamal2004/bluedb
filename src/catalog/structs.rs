@@ -33,5 +33,4 @@ pub enum Dtp {
     String,
     Boolean,
     Date,
-    Timestamp,
 }
