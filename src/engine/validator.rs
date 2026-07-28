@@ -23,7 +23,6 @@ impl Validator {
                 for stat in &ast {
                     match stat {
                         Statement::Query(_) => {}
-                        Statement::CreateTable { .. } => {}
                         Statement::Insert { .. } => {}
                         Statement::Update { .. } => {}
                         Statement::Delete { .. } => {}
@@ -32,7 +31,6 @@ impl Validator {
                         Statement::Commit { .. } => {}
                         Statement::CreateTable { .. } => {}
                         Statement::Drop { .. } => {}
-                        // Statement::Drop { .. } => {},
                         _ => {
                             return Err(anyhow::anyhow!(
                                 "Parser: Unsupported statements in the SQL Query"
@@ -59,9 +57,15 @@ impl Validator {
             Statement::Drop {
                 object_type,
                 if_exists,
+                names,
                 ..
             } => {
-                Validator::validate_drop_table_statement(object_type, *if_exists, catalog.clone())?;
+                Validator::validate_drop_table_statement(
+                    object_type,
+                    names,
+                    *if_exists,
+                    catalog.clone(),
+                )?;
             }
             _ => {
                 // For other statements, we can add more validation logic as needed
@@ -88,16 +92,19 @@ impl Validator {
 
     fn validate_drop_table_statement(
         object_type: &sqlparser::ast::ObjectType,
+        names: &Vec<sqlparser::ast::ObjectName>,
         if_exists: bool,
         catalog: Arc<Catalog>,
     ) -> Result<()> {
         if let sqlparser::ast::ObjectType::Table = object_type {
-            let rel_name = object_type.to_string();
-            if !catalog.rel_exists_by_name(&rel_name) && if_exists == false {
-                return Err(anyhow::anyhow!(
-                    "Binder: Relation {} does not exist in the catalog",
-                    rel_name
-                ));
+            for rel_name in names {
+                let rel_name = rel_name.to_string();
+                if !catalog.rel_exists_by_name(&rel_name) && if_exists == false {
+                    return Err(anyhow::anyhow!(
+                        "Binder: Relation {} does not exist in the catalog",
+                        rel_name
+                    ));
+                }
             }
         }
         Ok(())

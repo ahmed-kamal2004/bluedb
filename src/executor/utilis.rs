@@ -1,5 +1,5 @@
 use crate::catalog::structs::{Rel, RelTp::Table};
-use sqlparser::ast::CreateTable;
+
 pub fn map_crt_tbl_strct_to_rel(crt_tbl_strct: &sqlparser::ast::CreateTable) -> Rel {
     Rel {
         nm: crt_tbl_strct.name.to_string(),

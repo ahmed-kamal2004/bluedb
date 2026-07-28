@@ -51,21 +51,19 @@ impl Catalog {
         &self,
         rel_name: &str,
         storage_manager: Arc<StorageManager>,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let mut write_guard = self.rels.write().unwrap();
         if write_guard.remove(rel_name).is_some() {
             storage_manager.delete_rel(rel_name)?;
-            Ok(true)
-        } else {
-            Ok(false)
         }
+        Ok(())
     }
 
     pub fn delete_rel_by_id(
         &self,
         rel_id: u32,
         storage_manager: Arc<StorageManager>,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let mut write_guard = self.rels.write().unwrap();
         let rel_name_opt = write_guard.iter().find_map(|(name, rel)| {
             if rel.id == rel_id {
@@ -78,9 +76,7 @@ impl Catalog {
         if let Some(rel_name) = rel_name_opt {
             write_guard.remove(&rel_name);
             storage_manager.delete_rel(&rel_name)?;
-            Ok(true)
-        } else {
-            Ok(false)
         }
+        Ok(())
     }
 }

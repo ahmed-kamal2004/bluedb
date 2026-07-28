@@ -69,7 +69,7 @@ fn main() -> Result<()> {
             let response: QueryResult =
                 serde_json::from_slice(&payload).expect("Failed to parse response from server");
 
-            println!("\n\t>--> \n{}", response);
+            println!("\n>--> {}", response);
 
             buffer.clear();
         }
