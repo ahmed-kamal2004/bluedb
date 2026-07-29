@@ -2,7 +2,6 @@ use crate::catalog::Catalog;
 
 use super::result::QueryResult;
 use super::storage::storage::StorageManager;
-use crate::catalog::structs::Rel;
 use anyhow::Result;
 use sqlparser::ast::Statement;
 use std::sync::Arc;
