@@ -19,6 +19,11 @@ impl FileManager {
         let _fl = opts.open(fl_path)?;
         Ok(())
     }
+
+    pub fn create_dir(dir_path: &str) -> Result<()> {
+        std::fs::create_dir_all(dir_path)?;
+        Ok(())
+    }
     /* Writes */
     pub fn write_to_file(fl_path: &str, offset: u64, mut data: Vec<u8>, size: usize) -> Result<()> {
         if !FileManager::is_file_exists(fl_path) {
@@ -166,5 +171,9 @@ impl FileManager {
 
     pub fn is_file_exists(fl_path: &str) -> bool {
         std::path::Path::new(fl_path).exists()
+    }
+
+    pub fn is_directory_exists(dir_path: &str) -> bool {
+        std::path::Path::new(dir_path).is_dir()
     }
 }

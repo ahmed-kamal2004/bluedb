@@ -2,9 +2,27 @@ use std::fs::File;
 
 use super::super::constants::CATALOG_FILE_NAME;
 use super::super::file::FileManager;
-use crate::catalog::{self, structs::Rel};
+use crate::catalog::structs::Rel;
 use anyhow::Result;
 use tracing::info;
+
+macro_rules! init_check {
+    ($self:expr, $catalog_fl_pth:expr) => {
+        if !FileManager::is_directory_exists(&$self.db_pth) {
+            return Err(anyhow::anyhow!(
+                "StorageManager: Database directory {} does not exist",
+                $self.db_pth
+            ));
+        }
+
+        if !FileManager::is_file_exists(&$catalog_fl_pth) {
+            return Err(anyhow::anyhow!(
+                "StorageManager: Catalog file {} does not exist",
+                $catalog_fl_pth
+            ));
+        }
+    };
+}
 
 pub struct StorageManager {
     db_pth: String,
@@ -23,6 +41,14 @@ impl StorageManager {
     /* TODO: optimize catalog file management and layout, using JSONs is not efficient */
     pub fn load_catalog(&self) -> Result<Vec<Rel>> {
         let catalog_fl_pth = format!("{}/{}", self.db_pth, CATALOG_FILE_NAME);
+
+        if !FileManager::is_directory_exists(&self.db_pth) {
+            info!(
+                "StorageManager: Database directory {} does not exist, creating new directory.",
+                self.db_pth
+            );
+            FileManager::create_dir(&self.db_pth)?;
+        }
 
         if FileManager::is_file_exists(&catalog_fl_pth) {
             info!(
@@ -55,6 +81,9 @@ impl StorageManager {
 
     pub fn create_rel(&self, rel: Rel) -> Result<bool> {
         let catalog_fl_pth = format!("{}/{}", self.db_pth, CATALOG_FILE_NAME);
+
+        init_check!(self, catalog_fl_pth);
+
         let mut rels = self.load_catalog()?;
         rels.push(rel);
         let data = serde_json::ser::to_vec(&rels)?;
@@ -64,6 +93,9 @@ impl StorageManager {
 
     pub fn delete_rel(&self, rel_name: &str) -> Result<()> {
         let catalog_fl_pth = format!("{}/{}", self.db_pth, CATALOG_FILE_NAME);
+
+        init_check!(self, catalog_fl_pth);
+
         let mut catalog = self.load_catalog()?;
         if let Some(pos) = catalog.iter().position(|rel| rel.nm == rel_name) {
             catalog.remove(pos);

@@ -30,4 +30,4 @@ target
 /target
 
 ## Ignore the data folder
-./data
+data
