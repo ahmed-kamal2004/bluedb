@@ -23,3 +23,11 @@ target
 # Ignore generated tables
 **/*table*
 **/!table.rs
+
+
+# Added by cargo
+
+/target
+
+## Ignore the data folder
+./data
