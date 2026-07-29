@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod config;
+pub mod connection;
 pub mod constants;
 pub mod engine;
 pub mod executor;

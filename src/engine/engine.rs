@@ -63,7 +63,7 @@ impl Engine {
         Ok(())
     }
 
-    pub fn process_query(&self, query: &str) -> Result<QueryResult> {
+    pub fn process_query(&self, query: &str, conn_id: u64) -> Result<QueryResult> {
         // (0) Zero step is to check if the query can be processed without need to parse it, like ('\l' or '\dt' or '\d database_name') to list the databases and tables in the catalog
         // (1) First step to parse the query
         // (2) Second step to check the query data (binder stage)

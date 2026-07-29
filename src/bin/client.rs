@@ -5,6 +5,9 @@ use rustyline::error::ReadlineError;
 use serde_json;
 use std::env;
 use std::io::{Read, Write};
+
+const CLIENT_BUFFER_SIZE: usize = 512;
+
 fn main() -> Result<()> {
     let mut args = env::args();
 
@@ -44,6 +47,9 @@ fn main() -> Result<()> {
         };
 
         if buffer.is_empty() && line.trim() == "exit" {
+            stream
+                .write_all(b"exit\n")
+                .expect("Failed to send exit command to server");
             break;
         }
 
@@ -61,10 +67,15 @@ fn main() -> Result<()> {
                 .expect("Failed to read response length");
             let len = u64::from_be_bytes(len_buf) as usize;
 
-            let mut payload = vec![0u8; len];
-            stream
-                .read_exact(&mut payload)
-                .expect("Failed to read response payload");
+            let mut chunk: [u8; CLIENT_BUFFER_SIZE] = [0; CLIENT_BUFFER_SIZE];
+            let mut payload = Vec::new();
+            while payload.len() < len {
+                let to_read = std::cmp::min(len - payload.len(), CLIENT_BUFFER_SIZE);
+                stream
+                    .read_exact(&mut chunk[..to_read])
+                    .expect("Failed to read response chunk");
+                payload.extend_from_slice(&chunk[..to_read]);
+            }
 
             let response: QueryResult =
                 serde_json::from_slice(&payload).expect("Failed to parse response from server");
