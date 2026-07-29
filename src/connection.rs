@@ -5,9 +5,6 @@ use std::io::Read;
 use std::{io::Write, net::TcpStream, sync::Arc};
 use tracing::{error, info};
 
-/// Global timeout
-const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// Buffer Read size
 const BUFFER_SIZE: usize = 512;
 
