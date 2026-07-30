@@ -3,6 +3,7 @@ pub mod manager;
 
 use anyhow::Result;
 use std::sync::{Arc, RwLock};
+use tracing::info;
 
 use crate::lock::lock::{LockManager, LockType};
 
@@ -60,17 +61,14 @@ impl Transaction {
     }
 
     pub fn release_all_locks(&self) -> Result<()> {
-        let guard = self
-            .inner
-            .read()
-            .map_err(|_| anyhow::anyhow!("Transaction {} lock poisoned", self.txn_id))?;
-        for (rsrc_id, _) in &guard.locks {
-            self.lock_mngr.release_lock(rsrc_id, self.txn_id)?;
-        }
         let mut guard = self
             .inner
             .write()
             .map_err(|_| anyhow::anyhow!("Transaction {} lock poisoned", self.txn_id))?;
+        for (rsrc_id, _) in &guard.locks {
+            self.lock_mngr.release_lock(rsrc_id, self.txn_id)?;
+        }
+
         guard.locks.clear();
         Ok(())
     }
@@ -82,6 +80,7 @@ impl Transaction {
             .write()
             .map_err(|_| anyhow::anyhow!("Transaction {} lock poisoned", self.txn_id))?;
         guard.state = TxnSt::Committed;
+        info!("Transaction {} committed successfully.", self.txn_id);
         Ok(())
     }
 
@@ -91,6 +90,7 @@ impl Transaction {
             .write()
             .map_err(|_| anyhow::anyhow!("Transaction {} lock poisoned", self.txn_id))?;
         guard.state = TxnSt::Aborted;
+        info!("Transaction {} aborted successfully.", self.txn_id);
         Ok(())
     }
 }

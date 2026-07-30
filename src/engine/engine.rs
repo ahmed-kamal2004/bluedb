@@ -1,47 +1,34 @@
+use super::super::control::ControlManager;
 use tracing::info;
 
 use super::super::executor::Executor;
 use super::validator::Validator;
 use super::{super::catalog::Catalog, super::storage::storage::StorageManager};
 use crate::config::config::Config;
-use crate::lock::lock::LockManager;
 use crate::result::QueryResult;
+use crate::txn::manager::TransactionManager;
 use crate::txn::{self, Transaction};
 use anyhow::Result;
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::RwLock;
 
 pub struct Engine {
     config: Arc<Config>,
-    executor: Option<Arc<Executor>>,
-    catalog: Option<Arc<Catalog>>,
-    storage_manager: Option<Arc<StorageManager>>,
-    transactions: RwLock<HashMap<u64, Arc<Transaction>>>, // key: connection_id, value: transaction
-    lock_manager: Arc<LockManager>,
+    executor: Arc<Executor>,
+    catalog: Arc<Catalog>,
+    storage_manager: Arc<StorageManager>,
+    control_mngr: Arc<ControlManager>,
+    txn_mngr: Arc<TransactionManager>,
 }
 
 impl Engine {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config) -> Result<Self> {
         let config = Arc::new(config);
-        Engine {
-            config,
-            executor: None,
-            catalog: None,
-            storage_manager: None,
-            transactions: RwLock::new(HashMap::new()),
-            lock_manager: Arc::new(LockManager::new()),
-        }
-    }
-
-    pub fn initialize(&mut self) -> Result<()> {
-        info!("Initializing Engine with config: {:?}", self.config);
+        info!("Initializing Engine with config: {:?}", config);
         // Initialize the storage manager
-        let storage_manager = Arc::new(StorageManager::new(self.config.main_db_path.clone()));
-        self.storage_manager = Some(storage_manager.clone());
+        let storage_manager = Arc::new(StorageManager::new(config.main_db_path.clone()));
         info!(
-            "Storage Manager initialized with DB path: {}",
-            self.config.main_db_path
+            "[1/4] Storage Manager initialized with DB path: {}",
+            config.main_db_path
         );
 
         // Initialize the catalog
@@ -53,92 +40,82 @@ impl Engine {
             }
         }
 
-        self.catalog = Some(Arc::new(catalog));
+        let catalog = Arc::new(catalog);
         info!(
-            "Catalog loaded successfully with {} relations.",
-            self.catalog.as_ref().unwrap().rels.read().unwrap().len()
+            "[2/4] Catalog loaded successfully with {} relations.",
+            catalog.rels.read().unwrap().len()
         );
 
         // Initialize the executor
-        let executor = Executor::new(
-            storage_manager.clone(),
-            self.catalog.as_ref().unwrap().clone(),
-        );
-        self.executor = Some(Arc::new(executor));
-        info!("Executor initialized successfully.");
+        let executor = Executor::new(storage_manager.clone(), catalog.clone());
+        let executor = Arc::new(executor);
+        info!("[3/4] Executor initialized successfully.");
+        info!("[4/4] Engine initialized successfully.");
 
-        Ok(())
+        let control_mngr = Arc::new(ControlManager::new(format!(
+            "{}/{}",
+            config.main_db_path,
+            crate::constants::CONTROL_FILE_NAME
+        ))?);
+
+        Ok(Engine {
+            config,
+            executor,
+            catalog: catalog.clone(),
+            storage_manager,
+            control_mngr: control_mngr.clone(),
+            txn_mngr: Arc::new(TransactionManager::new(catalog, control_mngr)),
+        })
     }
 
     pub fn process_query(&self, query: &str, conn_id: u64) -> Result<QueryResult> {
-        // first, we need to check if the current connection has an active transaction.
-        let mut txns_guard = self.transactions.write().map_err(|_| {
-            anyhow::anyhow!(
-                "Failed to acquire transactions lock, connection id: {}",
-                conn_id
-            )
-        })?;
-        // then check if the connection has an active one.
-        let txn = txns_guard.get(&conn_id);
-        let (created_temp_txn, txn) = match txn {
-            Some(txn) => (false, txn.clone()), // the connection has an active transaction, we don't need to create a new one.
-            None => {
-                // the connection does not have an active transaction, we need to create a new one.
-                let new_txn = Arc::new(Transaction::new(conn_id, self.lock_manager.clone()));
-                txns_guard.insert(conn_id, new_txn.clone());
-                (true, new_txn.clone()) // we created a new transaction for this connection.
+        // (Parser & Filter) Initial validation of the support scope
+        if let Ok(ast) = Validator::initial_validation_of_query(query) {
+            // first, check if the query is a transaction management request (BEGIN, COMMIT, ROLLBACK)
+            // if it is, we will handle it separately, and not go through the normal query processing flow.
+            // directly handle it in the transaction manager, and return the result.
+            if TransactionManager::is_txn_mngmnt_req(&ast) {
+                match self.txn_mngr.handle_txn_mngmnt_req(&ast, conn_id) {
+                    Ok(result) => return Ok(result),
+                    Err(e) => {
+                        return Ok(QueryResult::Error {
+                            message: e.to_string(),
+                        });
+                    }
+                }
             }
-        };
-        drop(txns_guard); // drop the lock guard to avoid deadlocks when executing the query.
 
-        let outcome: anyhow::Result<QueryResult> = {
-            // (Parser & Filter) Initial validation of the support scope
-            let ast = Validator::initial_validation_of_query(query)?;
+            // if we are in the middle of a transaction
+            let (nex_txn_flag, txn) = self
+                .txn_mngr
+                .create_temp_txn_for_query_if_non_active_else_get_current(conn_id)?;
 
-            // (Binder) Validation against the catalog, we acquire locks per resource at this stage. (first stage to see the resources needed for the query)
-            let catalog = self
-                .catalog
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Catalog is not initialized"))?;
-            Validator::validate_query_against_catalog(&ast, catalog.clone())?;
+            let outcome: anyhow::Result<QueryResult> = {
+                // (Binder) Validation against the catalog, we acquire locks per resource at this stage. (first stage to see the resources needed for the query)
+                Validator::validate_query_against_catalog(&ast, self.catalog.clone())?;
 
-            // (Executor) Execute the query.
-            let result = self.executor.as_ref().unwrap().execute_query(&ast)?;
+                // (Executor) Execute the query.
+                let result = self.executor.execute_query(&ast)?;
 
-            Ok((result))
-        };
+                Ok((result))
+            };
 
-        // if we created a temporary transaction for this connection, we need to remove it.
-        if created_temp_txn {
-            let mut txns_guard = self.transactions.write().map_err(|_| {
-                anyhow::anyhow!(
-                    "Failed to acquire transactions lock, connection id: {}",
-                    conn_id
-                )
-            })?;
-            txns_guard.remove(&conn_id);
-            drop(txns_guard); // drop the lock guard after removing the temporary transaction.
+            let success = outcome.is_ok();
+
+            // remove the temporary transaction if it was created for this query, after the query is processed.
+            self.txn_mngr
+                .remove_temp_txn_if_created_for_query(nex_txn_flag, conn_id, success)?;
+
+            match outcome {
+                Ok(result) => Ok(result),
+                Err(e) => Ok(QueryResult::Error {
+                    message: e.to_string(),
+                }),
+            }
+        } else {
+            Ok(QueryResult::Error {
+                message: format!("Parser: Failed to parse SQL query: {}", query),
+            })
         }
-
-        let result = match outcome {
-            Ok(result) => {
-                if created_temp_txn {
-                    txn.commit()?;
-                    txn.release_all_locks()?;
-                    info!("Transaction {} committed successfully.", conn_id);
-                }
-                result
-            }
-            Err(_) => {
-                txn.abort()?;
-                txn.release_all_locks()?;
-                info!("Transaction {} aborted due to error.", conn_id);
-                QueryResult::Error {
-                    message: format!("Transaction {} aborted due to error.", conn_id),
-                }
-            }
-        };
-
-        Ok(result)
     }
 }

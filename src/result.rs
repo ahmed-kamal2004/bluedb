@@ -11,6 +11,9 @@ pub enum QueryResult {
     Error {
         message: String,
     },
+    StartTransaction {},
+    Commit {},
+    Rollback {},
 }
 
 impl Display for QueryResult {
@@ -18,6 +21,9 @@ impl Display for QueryResult {
         match self {
             QueryResult::Ddl { message } => write!(f, "DDL Result: {}", message),
             QueryResult::Error { message } => message.fmt(f),
+            QueryResult::StartTransaction {} => write!(f, "Transaction started"),
+            QueryResult::Commit {} => write!(f, "Transaction committed"),
+            QueryResult::Rollback {} => write!(f, "Transaction rolled back"),
         }
     }
 }

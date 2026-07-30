@@ -2,6 +2,7 @@ use anyhow::Result;
 use bluedb::config::config::Config;
 use bluedb::connection::Connection;
 use bluedb::engine::engine::Engine;
+use bluedb::initializer::Initializer;
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
@@ -18,18 +19,14 @@ fn main() -> Result<()> {
         )
         .init();
 
+    // initialize the config
     let config = Config::new();
 
+    // initialize the system (create necessary files and directories)
+    Initializer::initialize_system(&config.main_db_path)?;
+
     // initialize the engine
-    let mut engine = Engine::new(config.clone());
-    match engine.initialize() {
-        Ok(_) => info!("Engine initialized successfully."),
-        Err(e) => {
-            error!("Failed to initialize Engine: {:?}", e);
-            return Err(anyhow::anyhow!("Engine initialization failed"));
-        }
-    }
-    let engine = Arc::new(engine);
+    let engine = Arc::new(Engine::new(config.clone())?);
 
     // start listening for incoming connections
     let listener = TcpListener::bind(format!("{}:{}", config.host, config.port))?;
