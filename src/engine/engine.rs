@@ -86,18 +86,19 @@ impl Engine {
             }
 
             // if we are in the middle of a transaction
+            // txn is used to acquire locks during the binding stage.
             let (nex_txn_flag, txn) = self
                 .txn_mngr
                 .create_temp_txn_for_query_if_non_active_else_get_current(conn_id)?;
 
             let outcome: anyhow::Result<QueryResult> = {
                 // (Binder) Validation against the catalog, we acquire locks per resource at this stage. (first stage to see the resources needed for the query)
-                Validator::validate_query_against_catalog(&ast, self.catalog.clone())?;
+                Validator::validate_query_against_catalog(&ast, self.catalog.clone(), txn)?;
 
                 // (Executor) Execute the query.
                 let result = self.executor.execute_query(&ast)?;
 
-                Ok((result))
+                Ok(result)
             };
 
             let success = outcome.is_ok();

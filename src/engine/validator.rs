@@ -1,8 +1,9 @@
 use anyhow::Result;
 use sqlparser::{ast::Statement, dialect::GenericDialect, parser::Parser};
 use std::sync::Arc;
+use super::super::lock::lock::LockType;
 
-use crate::catalog::Catalog;
+use crate::{catalog::Catalog, txn::Transaction};
 
 pub struct Validator {}
 
@@ -49,10 +50,10 @@ impl Validator {
         }
     }
 
-    pub fn validate_query_against_catalog(ast: &Statement, catalog: Arc<Catalog>) -> Result<()> {
+    pub fn validate_query_against_catalog(ast: &Statement, catalog: Arc<Catalog>, txn: Arc<Transaction>) -> Result<()> {
         match ast {
             Statement::CreateTable(crt_tbl_struct) => {
-                Validator::validate_create_table_statement(crt_tbl_struct, catalog.clone())?;
+                Validator::validate_create_table_statement(crt_tbl_struct, catalog.clone(), txn)?;
             }
             Statement::Drop {
                 object_type,
@@ -65,6 +66,7 @@ impl Validator {
                     names,
                     *if_exists,
                     catalog.clone(),
+                    txn.clone(),
                 )?;
             }
             _ => {
@@ -79,8 +81,14 @@ impl Validator {
     fn validate_create_table_statement(
         crt_tbl_struct: &sqlparser::ast::CreateTable,
         catalog: Arc<Catalog>,
+        txn: Arc<Transaction>,
     ) -> Result<()> {
         let tbl_nm = crt_tbl_struct.name.to_string();
+
+        // lock is aquired before checking if the table exists in the catalog, to avoid race conditions
+        txn.acquire_lock(&tbl_nm, LockType::Exclusive)?;
+
+        // check
         if catalog.rel_exists_by_name(&tbl_nm) && crt_tbl_struct.if_not_exists == false {
             return Err(anyhow::anyhow!(
                 "Binder: Relation {} already exists in the catalog",
@@ -95,10 +103,15 @@ impl Validator {
         names: &Vec<sqlparser::ast::ObjectName>,
         if_exists: bool,
         catalog: Arc<Catalog>,
+        txn: Arc<Transaction>,
     ) -> Result<()> {
         if let sqlparser::ast::ObjectType::Table = object_type {
             for rel_name in names {
                 let rel_name = rel_name.to_string();
+                // just acquire a write lock over it, before checking if it exists in the catalog, to avoid race conditions
+                txn.acquire_lock(&rel_name, LockType::Exclusive)?;
+
+                // check
                 if !catalog.rel_exists_by_name(&rel_name) && if_exists == false {
                     return Err(anyhow::anyhow!(
                         "Binder: Relation {} does not exist in the catalog",
