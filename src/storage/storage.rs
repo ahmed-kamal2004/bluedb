@@ -1,10 +1,7 @@
-use std::fs::File;
-
 use super::super::constants::CATALOG_FILE_NAME;
 use super::super::file::FileManager;
 use crate::catalog::structs::Rel;
 use anyhow::Result;
-use tracing::info;
 
 macro_rules! init_check {
     ($self:expr, $catalog_fl_pth:expr) => {
@@ -42,27 +39,7 @@ impl StorageManager {
     pub fn load_catalog(&self) -> Result<Vec<Rel>> {
         let catalog_fl_pth = format!("{}/{}", self.db_pth, CATALOG_FILE_NAME);
 
-        if !FileManager::is_directory_exists(&self.db_pth) {
-            info!(
-                "StorageManager: Database directory {} does not exist, creating new directory.",
-                self.db_pth
-            );
-            FileManager::create_dir(&self.db_pth)?;
-        }
-
-        if FileManager::is_file_exists(&catalog_fl_pth) {
-            info!(
-                "StorageManager: Catalog file {} exists, loading catalog.",
-                catalog_fl_pth
-            );
-        } else {
-            info!(
-                "StorageManager: Catalog file {} does not exist, creating new catalog file.",
-                catalog_fl_pth
-            );
-            FileManager::create_file(&catalog_fl_pth)?;
-            return Ok(Vec::new());
-        }
+        init_check!(self, catalog_fl_pth);
 
         let catalog_data = match FileManager::read_whole_file(&catalog_fl_pth) {
             Ok(data) => data,

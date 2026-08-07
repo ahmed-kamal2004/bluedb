@@ -1,7 +1,7 @@
+use super::super::lock::lock::LockType;
 use anyhow::Result;
 use sqlparser::{ast::Statement, dialect::GenericDialect, parser::Parser};
 use std::sync::Arc;
-use super::super::lock::lock::LockType;
 
 use crate::{catalog::Catalog, txn::Transaction};
 
@@ -50,7 +50,11 @@ impl Validator {
         }
     }
 
-    pub fn validate_query_against_catalog(ast: &Statement, catalog: Arc<Catalog>, txn: Arc<Transaction>) -> Result<()> {
+    pub fn validate_query_against_catalog(
+        ast: &Statement,
+        catalog: Arc<Catalog>,
+        txn: Arc<Transaction>,
+    ) -> Result<()> {
         match ast {
             Statement::CreateTable(crt_tbl_struct) => {
                 Validator::validate_create_table_statement(crt_tbl_struct, catalog.clone(), txn)?;
