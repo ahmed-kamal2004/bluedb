@@ -141,7 +141,8 @@ impl Insert for HeapPageView<'_> {
                         pg_hdr.nxt_fr_spc_ofst = (nxt_fr_spc_ofst + ROW_POINTER_SIZE) as u16;
 
                         // insert the row.
-                        let insrt_ofst = nxt_fr_spc_ofst + frst_fr_spc_hdr.fr_spc_sz as usize + ROW_POINTER_SIZE;
+                        let insrt_ofst =
+                            nxt_fr_spc_ofst + frst_fr_spc_hdr.fr_spc_sz as usize + ROW_POINTER_SIZE;
                         self.insrt_rw_at_ofst(insrt_ofst, row.clone(), txn_id)?;
 
                         // insert the row pointer.

@@ -271,30 +271,6 @@ impl Initialize for HeapPageView<'_> {
     }
 }
 
-impl Iterator for HeapPageView<'_> {
-    type Item = Row;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // Breaking condition.
-        if self.nxt_rw_ptr_ofst >= 0 && self.nxt_rw_ptr_ofst < PAGE_HEADER_SIZE as i32 {
-            return None;
-        }
-
-        // First time.
-        if self.nxt_rw_ptr_ofst == -1 {
-            let pg_hdr = self.get_header().expect("Failed to read page header");
-            self.nxt_rw_ptr_ofst = pg_hdr.nxt_rw_ptr_ofst as i32;
-        }
-
-        let rw = self
-            .read_row(self.nxt_rw_ptr_ofst as usize)
-            .expect("Failed to read row");
-        self.nxt_rw_ptr_ofst -= ROW_POINTER_SIZE as i32;
-
-        Some(rw)
-    }
-}
-
 /// Read-only iterator for HeapPageView
 pub struct HeapPageViewRefIter<'a, 'b> {
     view: &'b HeapPageView<'a>,
@@ -305,15 +281,14 @@ impl<'a, 'b> Iterator for HeapPageViewRefIter<'a, 'b> {
     type Item = Row;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Breaking condition
-        if self.nxt_rw_ptr_ofst >= 0 && self.nxt_rw_ptr_ofst < PAGE_HEADER_SIZE as i32 {
-            return None;
-        }
-
         // First time initialization
         if self.nxt_rw_ptr_ofst == -1 {
             let pg_hdr = self.view.get_header().expect("Failed to read page header");
             self.nxt_rw_ptr_ofst = pg_hdr.nxt_rw_ptr_ofst as i32;
+        }
+
+        if self.nxt_rw_ptr_ofst < PAGE_HEADER_SIZE as i32 {
+            return None;
         }
 
         // Reads the row cleanly through the shared view reference
@@ -322,7 +297,6 @@ impl<'a, 'b> Iterator for HeapPageViewRefIter<'a, 'b> {
             .read_row(self.nxt_rw_ptr_ofst as usize)
             .expect("Failed to read row");
         self.nxt_rw_ptr_ofst -= ROW_POINTER_SIZE as i32;
-
         Some(rw)
     }
 }
@@ -527,5 +501,41 @@ mod tests {
 
         assert_eq!(fr_spc_tl as usize, total_free_space + 2 * ROW_POINTER_SIZE);
         Ok(())
+    }
+
+    #[test]
+    fn iterating_empty_page_returns_no_rows() -> Result<()> {
+        let mut page = new_heap_page();
+        let mut view = page.create_heap_page_view()?;
+        view.initialize(11)?;
+        // no inserts at all
+
+        let mut iter = view.into_iter();
+        assert!(iter.next().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn iterating_page_with_one_row_returns_that_row() -> Result<()> {
+        let mut page = new_heap_page();
+        let mut view = page.create_heap_page_view()?;
+        view.initialize(11)?;
+
+        let row = vec![field(b"hello"), field(b"world")];
+        view.insert_row(&row, 22)?;
+
+        let mut iter = view.into_iter();
+        if let Some(row) = iter.next() {
+            assert_eq!(row.fields[0].data, b"hello");
+            assert_eq!(row.fields[1].data, b"world");
+            assert!(row.header.tmin == 22);
+            assert!(row.header.tmax == 0);
+
+            assert!(iter.next().is_none());
+
+            Ok(())
+        } else {
+            panic!("Expected a row but got None");
+        }
     }
 }
