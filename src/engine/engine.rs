@@ -5,6 +5,7 @@ use super::super::executor::Executor;
 use super::validator::Validator;
 use super::{super::catalog::Catalog, super::storage::storage::StorageManager};
 use crate::config::config::Config;
+use crate::pool::pool::BufPl;
 use crate::result::QueryResult;
 use crate::txn::manager::TransactionManager;
 use crate::txn::{self, Transaction};
@@ -17,6 +18,7 @@ pub struct Engine {
     catalog: Arc<Catalog>,
     storage_manager: Arc<StorageManager>,
     control_mngr: Arc<ControlManager>,
+    buf_pool: Arc<BufPl>,
     txn_mngr: Arc<TransactionManager>,
 }
 
@@ -27,7 +29,7 @@ impl Engine {
         // Initialize the storage manager
         let storage_manager = Arc::new(StorageManager::new(config.main_db_path.clone()));
         info!(
-            "[1/4] Storage Manager initialized with DB path: {}",
+            "[1/5] Storage Manager initialized with DB path: {}",
             config.main_db_path
         );
 
@@ -42,15 +44,25 @@ impl Engine {
 
         let catalog = Arc::new(catalog);
         info!(
-            "[2/4] Catalog loaded successfully with {} relations.",
+            "[2/5] Catalog loaded successfully with {} relations.",
             catalog.rels.read().unwrap().len()
         );
 
         // Initialize the executor
         let executor = Executor::new(storage_manager.clone(), catalog.clone());
         let executor = Arc::new(executor);
-        info!("[3/4] Executor initialized successfully.");
-        info!("[4/4] Engine initialized successfully.");
+        info!("[3/5] Executor initialized successfully.");
+        info!("[4/5] Control Manager initialized successfully.");
+
+        // Intialize the buffer pool
+        let buf_pl = Arc::new(BufPl::new(
+            config.main_db_path.clone(),
+            config.buffer_pool_size,
+        ));
+        info!(
+            "[5/5] Buffer Pool initialized successfully with capacity: {}.",
+            config.buffer_pool_size
+        );
 
         let control_mngr = Arc::new(ControlManager::new(format!(
             "{}/{}",
@@ -64,6 +76,7 @@ impl Engine {
             catalog: catalog.clone(),
             storage_manager,
             control_mngr: control_mngr.clone(),
+            buf_pool: buf_pl.clone(),
             txn_mngr: Arc::new(TransactionManager::new(catalog, control_mngr)),
         })
     }

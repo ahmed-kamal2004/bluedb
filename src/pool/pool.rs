@@ -1,43 +1,21 @@
-use crate::pool::page::Page;
-use std::rc::Weak;
+use crate::pool::list::List;
+use crate::pool::wrpr::FrameWrpr;
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU16;
-
-pub struct FrameWrpr {
-    /// the actual data
-    pub frame: RwLock<Page>,
-    /// for the linked list requirements.
-    pub next: Weak<FrameWrpr>,
-    pub prev: Weak<FrameWrpr>,
-    /// checker for if the data is dirty or not.
-    pub is_dirty: AtomicBool,
-    /// counter for the current number of pins on the frame, if it is pinned, it cannot be evicted.
-    pub is_pinned: AtomicU16,
-    /// Immutable once created.
-    /// Page ID is a combination of file name and page number, which is used to uniquely identify a page in the buffer pool.
-    /// Example: "file1.txt:0" represents the first page of file1.txt, "file1.txt:1" represents the second page of file1.txt, and so on.
-    pub page_id: String,
-}
-
-pub struct FrameList {
-    pub head: Weak<FrameWrpr>,
-    pub tail: Weak<FrameWrpr>,
-}
+use std::sync::atomic::AtomicU32;
 
 /// InnoDB buffer pool implementation.
 pub struct BufPl {
     pub db_path: String,
 
-    pub old_sublist: Arc<RwLock<FrameList>>,
-    pub old_sublist_capacity: usize,
+    pub old_sublist: Arc<List>,
+    pub old_sublist_capacity: AtomicU32,
 
-    pub new_sublist: Arc<RwLock<FrameList>>,
-    pub new_sublist_capacity: usize,
+    pub new_sublist: Arc<List>,
+    pub new_sublist_capacity: AtomicU32,
 
-    pub free_list: Arc<RwLock<FrameList>>,
-    pub free_list_capacity: usize,
+    pub free_list: Arc<List>,
+    pub free_list_capacity: AtomicU32,
 
     pub page_hash: Arc<RwLock<std::collections::HashMap<String, Arc<FrameWrpr>>>>,
 }
@@ -47,28 +25,21 @@ pub struct BufPl {
 
 impl BufPl {
     pub fn new(db_path: String, free_list_capacity: usize) -> Self {
-        let frame_lst = FrameList {
-            head: Weak::new(),
-            tail: Weak::new(),
-        };
+        let free_list = Arc::new(List::new());
+
+        for _ in 0..free_list_capacity {
+            let frame = Arc::new(FrameWrpr::new_empty());
+            free_list.push_back(frame);
+        }
 
         BufPl {
             db_path,
-            old_sublist: Arc::new(RwLock::new(FrameList {
-                head: Weak::new(),
-                tail: Weak::new(),
-            })),
-            old_sublist_capacity: 0,
-            new_sublist: Arc::new(RwLock::new(FrameList {
-                head: Weak::new(),
-                tail: Weak::new(),
-            })),
-            new_sublist_capacity: 0,
-            free_list: Arc::new(RwLock::new(FrameList {
-                head: Weak::new(),
-                tail: Weak::new(),
-            })),
-            free_list_capacity,
+            old_sublist: Arc::new(List::new()),
+            old_sublist_capacity: AtomicU32::new(0),
+            new_sublist: Arc::new(List::new()),
+            new_sublist_capacity: AtomicU32::new(0),
+            free_list,
+            free_list_capacity: AtomicU32::new(free_list_capacity as u32),
             page_hash: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }

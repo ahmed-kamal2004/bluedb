@@ -3,6 +3,7 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub main_db_path: String,
+    pub buffer_pool_size: usize,
 }
 
 impl Config {
@@ -17,10 +18,17 @@ impl Config {
         // main database path configuration
         let main_db_path = std::env::var("BLUEDB_PATH").unwrap_or_else(|_| "./data".to_string());
 
+        // buffer pool size configuration
+        let buffer_pool_size = std::env::var("BLUEDB_BUFFER_POOL_SIZE")
+            .unwrap_or_else(|_| "100".to_string())
+            .parse::<usize>()
+            .unwrap_or(100);
+
         Config {
             host,
             port,
             main_db_path,
+            buffer_pool_size,
         }
     }
 }
