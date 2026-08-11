@@ -1,8 +1,8 @@
 use anyhow::Result;
-use bluedb::config::config::Config;
 use bluedb::connection::Connection;
 use bluedb::engine::engine::Engine;
 use bluedb::initializer::Initializer;
+use bluedb::{config::config::Config, constants::PAGE_SIZE};
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
@@ -24,6 +24,9 @@ fn main() -> Result<()> {
 
     // initialize the system (create necessary files and directories)
     Initializer::initialize_system(&config.main_db_path)?;
+
+    // verfiy the memory resources are sufficient for the database to run.
+    Initializer::verify_memory(config.buffer_pool_size, PAGE_SIZE)?;
 
     // initialize the engine
     let engine = Arc::new(Engine::new(config.clone())?);

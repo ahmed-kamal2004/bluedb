@@ -1,4 +1,5 @@
 use anyhow::Result;
+use sysinfo::System;
 use tracing::info;
 
 /// This struct is responsible for file validations and initialization of the database files and directories.
@@ -57,6 +58,33 @@ impl Initializer {
             info!("[4/4] Clog file {} already exists.", clog_file_path);
         }
 
+        Ok(())
+    }
+
+    pub fn verify_memory(pl_sz: usize, pg_sz: usize) -> Result<()> {
+        let s = System::new_all();
+
+        let tot_nded_mem = pl_sz * pg_sz;
+
+        let tot_sys_mem = s.total_memory() as usize;
+        let avail_sys_mem = s.available_memory() as usize;
+        let fr_sys_mem = s.free_memory() as usize;
+
+        let cn_be_usd_mem = tot_sys_mem.min(avail_sys_mem.min(fr_sys_mem));
+
+        let mrgn = (0.1 * cn_be_usd_mem as f64) as usize;
+        if tot_nded_mem + mrgn > cn_be_usd_mem {
+            anyhow::bail!(
+                "Not enough memory available. Total needed memory: {} bytes, total system memory: {} bytes, available system memory: {} bytes, free system memory: {} bytes, requested margin: {} bytes, pool size: {} bytes, it is recommended to make the buffer pool size less than or equal to {} bytes.",
+                tot_nded_mem + mrgn,
+                tot_sys_mem,
+                avail_sys_mem,
+                fr_sys_mem,
+                mrgn,
+                tot_nded_mem,
+                ((cn_be_usd_mem - mrgn) / (pg_sz * 2))
+            );
+        }
         Ok(())
     }
 }
