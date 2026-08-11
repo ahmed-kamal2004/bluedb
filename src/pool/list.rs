@@ -1,11 +1,7 @@
-use crate::pool::page::Page;
 use crate::pool::wrpr::FrameWrpr;
-use std::cell::UnsafeCell;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::RwLock;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU16;
+use std::sync::MutexGuard;
 
 pub struct List {
     inner: Mutex<State>,
@@ -84,7 +80,7 @@ impl List {
 
         unsafe {
             let frame_ptr = state.head;
-            state.head = (*frame_ptr).next.get().read();
+            state.head = *(*frame_ptr).next.get();
             if !state.head.is_null() {
                 (*state.head).prev.get().write(std::ptr::null_mut());
             } else {
@@ -105,7 +101,7 @@ impl List {
 
         unsafe {
             let frame_ptr = state.tail;
-            state.tail = (*frame_ptr).prev.get().read();
+            state.tail = *(*frame_ptr).prev.get();
             if !state.tail.is_null() {
                 (*state.tail).next.get().write(std::ptr::null_mut());
             } else {
@@ -117,54 +113,79 @@ impl List {
     }
 }
 
-impl List {
-    pub fn iter(&self) -> ListIter {
+impl<'a> List {
+    pub fn iter(&'a self) -> ListIter<'a> {
         let guard = self.inner.lock().unwrap();
         let state = &*guard;
+        let head = state.head;
+        drop(state);
         ListIter {
-            current: state.head,
+            _guard: guard,
+            current_next: head,
+            current_prev: std::ptr::null_mut(),
         }
     }
 
-    pub fn iter_back(&self) -> ListIter {
+    pub fn iter_back(&'a self) -> ListIter<'a> {
         let guard = self.inner.lock().unwrap();
         let state = &*guard;
+        let tail = state.tail;
+        drop(state);
         ListIter {
-            current: state.tail,
+            _guard: guard,
+            current_next: std::ptr::null_mut(),
+            current_prev: tail,
         }
     }
 }
 
-pub struct ListIter {
-    current: *mut FrameWrpr,
+pub struct ListIter<'a> {
+    _guard: MutexGuard<'a, State>,
+    current_next: *mut FrameWrpr,
+    current_prev: *mut FrameWrpr,
 }
 
-impl Iterator for ListIter {
+impl<'a> Iterator for ListIter<'a> {
     type Item = Arc<FrameWrpr>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current.is_null() {
+        if self.current_next.is_null() {
             return None;
         }
 
         unsafe {
-            let frame_ptr = self.current;
-            self.current = (*frame_ptr).next.get().read();
-            Some(Arc::from_raw(frame_ptr))
+            let frame_ptr = self.current_next;
+            self.current_next = *(*frame_ptr).next.get();
+
+            let frame_arc = Arc::from_raw(frame_ptr);
+            let temp_arc = Arc::clone(&frame_arc);
+            let _ = Arc::into_raw(frame_arc); // Prevent dropping the original Arc (doesn't decrement the ref count)
+            Some(temp_arc)
         }
     }
 }
 
-impl DoubleEndedIterator for ListIter {
+impl<'a> DoubleEndedIterator for ListIter<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.current.is_null() {
+        if self.current_prev.is_null() {
             return None;
         }
 
         unsafe {
-            let frame_ptr = self.current;
-            self.current = (*frame_ptr).prev.get().read();
-            Some(Arc::from_raw(frame_ptr))
+            let frame_ptr = self.current_prev;
+            self.current_prev = *(*frame_ptr).prev.get();
+            let frame_arc = Arc::from_raw(frame_ptr);
+            let temp_arc = Arc::clone(&frame_arc);
+            let _ = Arc::into_raw(frame_arc); // Prevent dropping the original Arc
+            Some(temp_arc)
+        }
+    }
+}
+
+impl Drop for List {
+    fn drop(&mut self) {
+        while let Some(frame) = self.pop_front() {
+            drop(frame);
         }
     }
 }
