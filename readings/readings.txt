@@ -1,3 +1,5 @@
 Lazy materialization in columner storage (efficient sorting and limiting) https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization
 
 InnoDB implementation https://www.alibabacloud.com/blog/an-in-depth-analysis-of-buffer-pool-in-innodb_601216
+
+Buffer Pool Princples https://www.researchgate.net/publication/220225054_Principles_of_database_buffer_management
