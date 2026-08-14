@@ -1,3 +1,4 @@
+use crate::pool::flush::FlushList;
 use crate::pool::list::List;
 use crate::pool::wrpr::FrameWrpr;
 use std::sync::Arc;
@@ -8,15 +9,21 @@ use std::sync::atomic::AtomicU32;
 pub struct BufPl {
     pub db_path: String,
 
+    /// contains the 3/8 of the buffer pool for the one-time reads.
     pub old_sublist: Arc<List>,
     pub old_sublist_capacity: AtomicU32,
 
+    /// contains the 5/8 of the buffer pool for the frequently accessed pages.
     pub new_sublist: Arc<List>,
     pub new_sublist_capacity: AtomicU32,
 
-    pub free_list: Arc<List>,
-    pub free_list_capacity: AtomicU32,
+    /// Flush list contains the frames that are dirty and need to be flushed to disk. (Contains the same frames of the LRU list, but in a different order, sorted by the time of modification.)
+    pub flush_list: Arc<FlushList>,
 
+    /// contains the free frames that are not currently used.
+    pub free_list: Arc<List>,
+
+    /// O(1) access/check for the frames in the buffer pool.
     pub page_hash: Arc<RwLock<std::collections::HashMap<String, Arc<FrameWrpr>>>>,
 }
 
@@ -38,9 +45,26 @@ impl BufPl {
             old_sublist_capacity: AtomicU32::new(0),
             new_sublist: Arc::new(List::new()),
             new_sublist_capacity: AtomicU32::new(0),
+            flush_list: Arc::new(FlushList::new()),
             free_list,
-            free_list_capacity: AtomicU32::new(free_list_capacity as u32),
             page_hash: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        }
+    }
+
+    pub fn get_frm(&self, pg_id: &str) -> Option<Arc<FrameWrpr>> {
+        // first, check if the page already exists in the page hash.
+        let page_hash = self.page_hash.read().unwrap();
+        if let Some(frame) = page_hash.get(pg_id) {
+            return Some(frame.clone());
+        } else {
+            // page doesn't exists in the hash.
+            // we need to retrieve or create it.
+
+            // first check if we have a free frame in the free list.
+            let fr_lst_sz = self.free_list.size();
+            if fr_lst_sz > 0 {}
+
+            None
         }
     }
 }

@@ -2,15 +2,16 @@ use crate::pool::wrpr::FrameWrpr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::atomic::AtomicUsize;
 
 pub struct List {
     inner: Mutex<State>,
+    size: AtomicUsize,
 }
 
 pub struct State {
     head: *mut FrameWrpr,
     tail: *mut FrameWrpr,
-    size: usize,
 }
 
 unsafe impl Send for List {}
@@ -22,14 +23,13 @@ impl List {
             inner: Mutex::new(State {
                 head: std::ptr::null_mut(),
                 tail: std::ptr::null_mut(),
-                size: 0,
             }),
+            size: AtomicUsize::new(0),
         }
     }
 
     pub fn size(&self) -> usize {
-        let state = self.inner.lock().unwrap();
-        state.size
+        self.size.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn push_front(&self, frame: Arc<FrameWrpr>) {
@@ -47,7 +47,7 @@ impl List {
             if state.tail.is_null() {
                 state.tail = frame_ptr;
             }
-            state.size += 1;
+            self.size.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
@@ -66,7 +66,7 @@ impl List {
             if state.head.is_null() {
                 state.head = frame_ptr;
             }
-            state.size += 1;
+            self.size.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
@@ -86,7 +86,7 @@ impl List {
             } else {
                 state.tail = std::ptr::null_mut();
             }
-            state.size -= 1;
+            self.size.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             Some(Arc::from_raw(frame_ptr))
         }
     }
@@ -107,7 +107,7 @@ impl List {
             } else {
                 state.head = std::ptr::null_mut();
             }
-            state.size -= 1;
+            self.size.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             Some(Arc::from_raw(frame_ptr))
         }
     }
@@ -118,7 +118,7 @@ impl<'a> List {
         let guard = self.inner.lock().unwrap();
         let state = &*guard;
         let head = state.head;
-        drop(state);
+        let _ = state;
         ListIter {
             _guard: guard,
             current_next: head,
@@ -130,7 +130,7 @@ impl<'a> List {
         let guard = self.inner.lock().unwrap();
         let state = &*guard;
         let tail = state.tail;
-        drop(state);
+        let _ = state;
         ListIter {
             _guard: guard,
             current_next: std::ptr::null_mut(),
