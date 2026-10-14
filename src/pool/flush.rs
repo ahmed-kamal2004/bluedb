@@ -77,7 +77,6 @@ impl FlushList {
     }
 }
 
-
 mod tests {
     use super::*;
 

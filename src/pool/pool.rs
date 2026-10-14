@@ -1,5 +1,7 @@
+use crate::ds::list::List;
+use crate::page;
 use crate::pool::flush::FlushList;
-use crate::pool::list::List;
+use crate::pool::pool_list::PoolList;
 use crate::pool::wrpr::FrameWrpr;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -10,18 +12,18 @@ pub struct BufPl {
     pub db_path: String,
 
     /// contains the 3/8 of the buffer pool for the one-time reads.
-    pub old_sublist: Arc<List>,
+    pub old_sublist: Arc<List<PoolList>>,
     pub old_sublist_capacity: AtomicU32,
 
     /// contains the 5/8 of the buffer pool for the frequently accessed pages.
-    pub new_sublist: Arc<List>,
+    pub new_sublist: Arc<List<PoolList>>,
     pub new_sublist_capacity: AtomicU32,
 
     /// Flush list contains the frames that are dirty and need to be flushed to disk. (Contains the same frames of the LRU list, but in a different order, sorted by the time of modification.)
     pub flush_list: Arc<FlushList>,
 
     /// contains the free frames that are not currently used.
-    pub free_list: Arc<List>,
+    pub free_list: Arc<List<PoolList>>,
 
     /// O(1) access/check for the frames in the buffer pool.
     pub page_hash: Arc<RwLock<std::collections::HashMap<String, Arc<FrameWrpr>>>>,
@@ -51,20 +53,51 @@ impl BufPl {
         }
     }
 
-    pub fn get_frm(&self, pg_id: &str) -> Option<Arc<FrameWrpr>> {
-        // first, check if the page already exists in the page hash.
-        let page_hash = self.page_hash.read().unwrap();
-        if let Some(frame) = page_hash.get(pg_id) {
-            return Some(frame.clone());
-        } else {
-            // page doesn't exists in the hash.
-            // we need to retrieve or create it.
+    pub fn get_free_frame(&self, page_id: &str) -> Option<Arc<FrameWrpr>> {
+        // to obtain a free frame, we need to pop it from the free list, then add it the page hash and the LRU sublist.
 
-            // first check if we have a free frame in the free list.
-            let fr_lst_sz = self.free_list.size();
-            if fr_lst_sz > 0 {}
+        if let Some(mut frame) = self.free_list.pop_front() {
+            unsafe {
+                let mut frame_mut = Arc::into_raw(frame) as *mut FrameWrpr; // into_raw consumes the Arc.
+                let frame_mut = &mut *frame_mut;
+                frame_mut.set_page_id(page_id.to_string());
+                frame = Arc::from_raw(frame_mut);
+            }
 
-            None
+            let mut hash_guard = self.page_hash.write().unwrap();
+
+            hash_guard.insert(page_id.to_string(), frame.clone());
+
+            drop(hash_guard);
+
+            self.old_sublist.push_front(frame.clone());
+
+            return Some(frame);
         }
+
+        // no free frames available, we need to evict a frame from the LRU list.
+        None
     }
+
+    /*
+    Thoughts
+
+    Obtain a free block -> if not found, then evict a block from the LRU list.
+
+    Eviction page must be
+    - not dirty
+    - not pinned
+
+    - This scan will include the old sublist only, and if sizes are destroyed, it will rebalance the sizes of the two sublists.
+
+    - The rebalancing is expensive, but it is amortized.
+
+    - if there are two many dirty pages, then we will need to flush them to disk, and then evict them.
+    (the flush in general should be managed by a background thread, but we can also do it in the foreground if needed.)
+
+
+    - what about sequential pre reading ?
+
+    - a page is moved from the old sublist to the new, when it is accessed again and it passed some time threshold.
+     */
 }
