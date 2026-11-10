@@ -1,4 +1,6 @@
-pub trait ListState: Drop {
+pub trait HasDestructor {}
+
+pub trait ListState: HasDestructor {
     type Item;
     type RawItem;
 

@@ -29,7 +29,7 @@ impl FlushList {
         self.size.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    pub fn push_by_oldest_modification_data(&self, frame: Arc<FrameWrpr>) {
+    pub fn push_by_ch_txn(&self, frame: Arc<FrameWrpr>) {
         let mut guard = self.inner.lock().unwrap();
         let state = &mut *guard;
         let frame_ptr = Arc::into_raw(frame) as *mut FrameWrpr;
@@ -38,18 +38,15 @@ impl FlushList {
             let mut iter = state.head;
             let mut prev_iter = std::ptr::null_mut();
             while !iter.is_null() {
-                if (*iter).oldest_modification_data > (*frame_ptr).oldest_modification_data {
+                if (*iter).ch_txn > (*frame_ptr).ch_txn {
                     break;
                 }
                 prev_iter = iter;
                 iter = *(*iter).next_flush.get();
             }
 
-            if (!iter.is_null()) {
-                (*frame_ptr).next_flush.get().write(iter);
-            } else {
-                (*frame_ptr).next_flush.get().write(std::ptr::null_mut());
-            }
+            (*frame_ptr).next_flush.get().write(iter);
+
             if (!prev_iter.is_null()) {
                 (*prev_iter).next_flush.get().write(frame_ptr);
             } else {
@@ -78,34 +75,34 @@ impl FlushList {
 }
 
 mod tests {
-    use super::*;
+    use super::{Arc, FlushList, FrameWrpr};
 
     #[test]
     fn test_flush_list() {
         let flush_list = FlushList::new();
 
         let mut frame1 = FrameWrpr::new_empty();
-        frame1.oldest_modification_data = 10;
-        flush_list.push_by_oldest_modification_data(Arc::new(frame1));
+        frame1.ch_txn = 10;
+        flush_list.push_by_ch_txn(Arc::new(frame1));
 
         let mut frame2 = FrameWrpr::new_empty();
-        frame2.oldest_modification_data = 5;
-        flush_list.push_by_oldest_modification_data(Arc::new(frame2));
+        frame2.ch_txn = 5;
+        flush_list.push_by_ch_txn(Arc::new(frame2));
 
         let mut frame3 = FrameWrpr::new_empty();
-        frame3.oldest_modification_data = 15;
-        flush_list.push_by_oldest_modification_data(Arc::new(frame3));
+        frame3.ch_txn = 15;
+        flush_list.push_by_ch_txn(Arc::new(frame3));
 
         assert_eq!(flush_list.size(), 3);
 
         let popped_frame1 = flush_list.pop_front().unwrap();
-        assert_eq!(popped_frame1.oldest_modification_data, 5);
+        assert_eq!(popped_frame1.ch_txn, 5);
 
         let popped_frame2 = flush_list.pop_front().unwrap();
-        assert_eq!(popped_frame2.oldest_modification_data, 10);
+        assert_eq!(popped_frame2.ch_txn, 10);
 
         let popped_frame3 = flush_list.pop_front().unwrap();
-        assert_eq!(popped_frame3.oldest_modification_data, 15);
+        assert_eq!(popped_frame3.ch_txn, 15);
 
         assert_eq!(flush_list.size(), 0);
     }

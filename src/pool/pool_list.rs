@@ -1,5 +1,5 @@
 use super::super::ds::list_state::ListState;
-use crate::pool::wrpr::FrameWrpr;
+use crate::{ds::list_state::HasDestructor, pool::wrpr::FrameWrpr};
 use std::sync::Arc;
 pub struct PoolList {
     head: *mut FrameWrpr,
@@ -13,6 +13,8 @@ impl Drop for PoolList {
         }
     }
 }
+
+impl HasDestructor for PoolList {} // the impl of `HasDestructor` means that Drop is implemented as a code-convention
 
 impl ListState for PoolList {
     type Item = Arc<FrameWrpr>;

@@ -4,7 +4,6 @@ use crate::catalog::Catalog;
 use crate::control::ControlManager;
 use crate::lock::lock::LockManager;
 use crate::result::QueryResult;
-use crate::txn;
 use anyhow::Result;
 use sqlparser::ast::Statement;
 use std::collections::HashMap;

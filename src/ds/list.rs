@@ -1,6 +1,4 @@
 use crate::ds::list_state::ListState;
-use crate::pool::wrpr::FrameWrpr;
-use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::atomic::AtomicUsize;
@@ -8,11 +6,6 @@ use std::sync::atomic::AtomicUsize;
 pub struct List<S> {
     inner: Mutex<S>,
     size: AtomicUsize,
-}
-
-pub struct State {
-    head: *mut FrameWrpr,
-    tail: *mut FrameWrpr,
 }
 
 unsafe impl<S: ListState + Send> Send for List<S> {}

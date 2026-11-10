@@ -30,7 +30,7 @@ pub struct FrameWrpr {
     pub prev: UnsafeCell<*mut FrameWrpr>,
 
     /// for the linked list requirements. (Flush list)
-    pub oldest_modification_data: usize,
+    pub ch_txn: usize,
     pub next_flush: UnsafeCell<*mut FrameWrpr>,
 }
 
@@ -58,7 +58,7 @@ impl FrameWrpr {
             }),
             next: UnsafeCell::new(std::ptr::null_mut()),
             prev: UnsafeCell::new(std::ptr::null_mut()),
-            oldest_modification_data: 0,
+            ch_txn: 0,
             next_flush: UnsafeCell::new(std::ptr::null_mut()),
         }
     }
@@ -75,7 +75,7 @@ impl FrameWrpr {
             }),
             next: UnsafeCell::new(std::ptr::null_mut()),
             prev: UnsafeCell::new(std::ptr::null_mut()),
-            oldest_modification_data: 0,
+            ch_txn: 0,
             next_flush: UnsafeCell::new(std::ptr::null_mut()),
         }
     }
@@ -92,7 +92,7 @@ impl FrameWrpr {
             }),
             next: UnsafeCell::new(std::ptr::null_mut()),
             prev: UnsafeCell::new(std::ptr::null_mut()),
-            oldest_modification_data: 0,
+            ch_txn: 0,
             next_flush: UnsafeCell::new(std::ptr::null_mut()),
         }
     }
