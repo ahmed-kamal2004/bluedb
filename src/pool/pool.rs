@@ -6,9 +6,9 @@ use crate::pool::pool_list::PoolList;
 use crate::pool::wrpr::FrameWrpr;
 use crate::pool::wrpr::ListType;
 use std::collections::HashMap;
+use std::fs::File;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::RwLock;
 use std::sync::atomic::AtomicU32;
 
 /// InnoDB buffer pool implementation.
@@ -31,8 +31,6 @@ pub struct BufPl {
 
     /// O(1) access/check for the frames in the buffer pool.
     pub page_hash: Arc<Mutex<std::collections::HashMap<String, Arc<FrameWrpr>>>>,
-
-    // pub file_hash: RwLock<HashMap<>>
 }
 
 // parsing the frame will be the responsibility of the caller (operator), the pool will only manage the frame's memory and lifecycle
@@ -59,21 +57,37 @@ impl BufPl {
         }
     }
 
+    /// Page_id layout
+    /// Since BlueDB is Multi-file database, then the page_id translation must give out 2 things:
+    /// - Which file we are targetting
+    /// - Which page in this file
+    ///
+    /// In order to achieve that, we need to page_id to be containing basically 2 things
+    /// {table_name}-{id}
+    ///
+    /// Where the table_name is translated using the catalog to the file_path
+    /// While the id that starts from 1 is transalated to the specific offset as OFFSET = PAGE_SIZE * PAGE_ID
     pub fn get_page(&self, pg_id: &str) -> Result<Arc<FrameWrpr>, BlueDbError> {
-        let hsh_tbl = self.page_hash.lock().or_else(|_| Err(BlueDbError::InternalError))?; // blocking.
+        let hsh_tbl = self
+            .page_hash
+            .lock()
+            .or_else(|_| Err(BlueDbError::InternalError))?; // blocking.
 
         // check if it exists in the table.
-        if let Some(pg) = hsh_tbl.get(pg_id){
+        if let Some(pg) = hsh_tbl.get(pg_id) {
             let mut pg = pg.clone();
-            let is_front = unsafe {(*pg.prev.get()).is_null()};
-            let is_back = unsafe {(*pg.next.get()).is_null()};
+            let is_front = unsafe { (*pg.prev.get()).is_null() };
+            let is_back = unsafe { (*pg.next.get()).is_null() };
             match pg.lst_type {
                 ListType::Upper => {
                     if !is_front && !is_back {
                         // remove it from this place and move to the start.
                         unsafe {
                             let frame = Arc::into_raw(pg) as *mut FrameWrpr;
-                            (*frame).prev.get().write((*frame).next.get() as *mut FrameWrpr);
+                            (*frame)
+                                .prev
+                                .get()
+                                .write((*frame).next.get() as *mut FrameWrpr);
                             pg = Arc::from_raw(frame);
                         }
                         self.new_sublist.push_front(pg); // TODO: fix the counter.
@@ -85,17 +99,22 @@ impl BufPl {
                         match page {
                             Some(p) => {
                                 self.new_sublist.push_back(p);
-                            },  
-                            None => {}
+                            }
+                            None => {
+                                return Err(BlueDbError::PageLookupError);
+                            }
                         }
                     }
-                },
+                }
                 ListType::Lower => {
                     if !is_front && !is_back {
                         // remove it from this place and move to the start.
                         unsafe {
                             let frame = Arc::into_raw(pg) as *mut FrameWrpr;
-                            (*frame).prev.get().write((*frame).next.get() as *mut FrameWrpr);
+                            (*frame)
+                                .prev
+                                .get()
+                                .write((*frame).next.get() as *mut FrameWrpr);
                             pg = Arc::from_raw(frame);
                         }
                         self.new_sublist.push_front(pg); // TODO: fix the counter.
@@ -105,8 +124,10 @@ impl BufPl {
                         match page {
                             Some(p) => {
                                 self.new_sublist.push_back(p);
-                            },  
-                            None => {}
+                            }
+                            None => {
+                                return Err(BlueDbError::PageLookupError);
+                            }
                         }
                     } else if is_back {
                         let page = self.old_sublist.pop_back();
@@ -114,23 +135,23 @@ impl BufPl {
                         match page {
                             Some(p) => {
                                 self.new_sublist.push_back(p);
-                            },  
-                            None => {}
+                            }
+                            None => {
+                                return Err(BlueDbError::PageLookupError);
+                            }
                         }
                     }
-                },
-                ListType::None => {},
+                }
+                ListType::None => {}
             }
-        }else {
+        } else {
             // The page doesn't exist in the page table
             // it needs to be loaded from the disk.
 
             // the buffer pool needs to have a hash table that contains the file-descriptors.
-
         }
 
         Err(InternalError)
-
     }
 
     /*

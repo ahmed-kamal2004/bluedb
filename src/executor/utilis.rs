@@ -1,4 +1,7 @@
-use crate::catalog::structs::{Rel, RelTp::Table};
+use crate::{
+    catalog::structs::{Rel, RelTp::Table},
+    constants,
+};
 
 pub fn map_crt_tbl_strct_to_rel(crt_tbl_strct: &sqlparser::ast::CreateTable) -> Rel {
     Rel {
@@ -19,7 +22,7 @@ pub fn map_crt_tbl_strct_to_rel(crt_tbl_strct: &sqlparser::ast::CreateTable) -> 
                 },
             })
             .collect(),
-        tp: Table,             // Set appropriate type if needed
-        fl_nm: "".to_string(), // Set appropriate file name if needed
+        tp: Table, // Set appropriate type if needed
+        fl_nm: format!("{}{}", crt_tbl_strct.name, constants::TABLE_EXTENSION).to_string(),
     }
 }

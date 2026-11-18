@@ -33,6 +33,7 @@ pub const FILE_UNIX_PAGE_SIZE: usize = 4096;
 pub const CATALOG_FILE_NAME: &str = "bluedb.catalog";
 pub const CONTROL_FILE_NAME: &str = "bluedb.control";
 pub const CLOG_FILE_NAME: &str = "bluedb.clog";
+pub const TABLE_EXTENSION: &str = ".tbl";
 
 /* Control File */
 pub const CONTROL_NEXT_TXN_ID_OFFSET: usize = 0;

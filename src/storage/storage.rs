@@ -2,6 +2,7 @@ use super::super::constants::CATALOG_FILE_NAME;
 use super::super::file::FileManager;
 use crate::catalog::structs::Rel;
 use anyhow::Result;
+use tracing_subscriber::fmt::format;
 
 macro_rules! init_check {
     ($self:expr, $catalog_fl_pth:expr) => {
@@ -58,8 +59,13 @@ impl StorageManager {
 
     pub fn create_rel(&self, rel: Rel) -> Result<bool> {
         let catalog_fl_pth = format!("{}/{}", self.db_pth, CATALOG_FILE_NAME);
+        let table_fl_pth = format!("{}/{}", self.db_pth, &rel.fl_nm);
 
         init_check!(self, catalog_fl_pth);
+
+        if let Err(err) = FileManager::create_file(&table_fl_pth) {
+            return Err(err);
+        }
 
         let mut rels = self.load_catalog()?;
         rels.push(rel);

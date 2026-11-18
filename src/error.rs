@@ -1,4 +1,6 @@
 pub enum BlueDbError {
-    UnAvailableMemory,
+    UnAvailableMemoryError,
+    BufPoolStartupError,
     InternalError,
+    PageLookupError,
 }

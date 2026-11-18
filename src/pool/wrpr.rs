@@ -1,7 +1,7 @@
 use crate::pool::page::Page;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicBool, AtomicU16};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, AtomicU16};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +90,6 @@ impl FrameWrpr {
             next_flush: UnsafeCell::new(std::ptr::null_mut()),
 
             lst_type: ListType::None,
-
         }
     }
 
