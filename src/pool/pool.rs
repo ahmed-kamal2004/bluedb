@@ -1,9 +1,13 @@
 use crate::ds::list::List;
-use crate::page;
+use crate::error::BlueDbError;
+use crate::error::BlueDbError::InternalError;
 use crate::pool::flush::FlushList;
 use crate::pool::pool_list::PoolList;
 use crate::pool::wrpr::FrameWrpr;
+use crate::pool::wrpr::ListType;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::RwLock;
 use std::sync::atomic::AtomicU32;
 
@@ -26,7 +30,9 @@ pub struct BufPl {
     pub free_list: Arc<List<PoolList>>,
 
     /// O(1) access/check for the frames in the buffer pool.
-    pub page_hash: Arc<RwLock<std::collections::HashMap<String, Arc<FrameWrpr>>>>,
+    pub page_hash: Arc<Mutex<std::collections::HashMap<String, Arc<FrameWrpr>>>>,
+
+    // pub file_hash: RwLock<HashMap<>>
 }
 
 // parsing the frame will be the responsibility of the caller (operator), the pool will only manage the frame's memory and lifecycle
@@ -49,34 +55,82 @@ impl BufPl {
             new_sublist_capacity: AtomicU32::new(0),
             flush_list: Arc::new(FlushList::new()),
             free_list,
-            page_hash: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            page_hash: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
-    pub fn get_free_frame(&self, page_id: &str) -> Option<Arc<FrameWrpr>> {
-        // to obtain a free frame, we need to pop it from the free list, then add it the page hash and the LRU sublist.
+    pub fn get_page(&self, pg_id: &str) -> Result<Arc<FrameWrpr>, BlueDbError> {
+        let hsh_tbl = self.page_hash.lock().or_else(|_| Err(BlueDbError::InternalError))?; // blocking.
 
-        if let Some(mut frame) = self.free_list.pop_front() {
-            unsafe {
-                let mut frame_mut = Arc::into_raw(frame) as *mut FrameWrpr; // into_raw consumes the Arc.
-                let frame_mut = &mut *frame_mut;
-                frame_mut.set_page_id(page_id.to_string());
-                frame = Arc::from_raw(frame_mut);
+        // check if it exists in the table.
+        if let Some(pg) = hsh_tbl.get(pg_id){
+            let mut pg = pg.clone();
+            let is_front = unsafe {(*pg.prev.get()).is_null()};
+            let is_back = unsafe {(*pg.next.get()).is_null()};
+            match pg.lst_type {
+                ListType::Upper => {
+                    if !is_front && !is_back {
+                        // remove it from this place and move to the start.
+                        unsafe {
+                            let frame = Arc::into_raw(pg) as *mut FrameWrpr;
+                            (*frame).prev.get().write((*frame).next.get() as *mut FrameWrpr);
+                            pg = Arc::from_raw(frame);
+                        }
+                        self.new_sublist.push_front(pg); // TODO: fix the counter.
+                    } else if is_front {
+                        // Do nothing.
+                    } else if is_back {
+                        let page = self.new_sublist.pop_back();
+
+                        match page {
+                            Some(p) => {
+                                self.new_sublist.push_back(p);
+                            },  
+                            None => {}
+                        }
+                    }
+                },
+                ListType::Lower => {
+                    if !is_front && !is_back {
+                        // remove it from this place and move to the start.
+                        unsafe {
+                            let frame = Arc::into_raw(pg) as *mut FrameWrpr;
+                            (*frame).prev.get().write((*frame).next.get() as *mut FrameWrpr);
+                            pg = Arc::from_raw(frame);
+                        }
+                        self.new_sublist.push_front(pg); // TODO: fix the counter.
+                    } else if is_front {
+                        let page = self.old_sublist.pop_front();
+
+                        match page {
+                            Some(p) => {
+                                self.new_sublist.push_back(p);
+                            },  
+                            None => {}
+                        }
+                    } else if is_back {
+                        let page = self.old_sublist.pop_back();
+
+                        match page {
+                            Some(p) => {
+                                self.new_sublist.push_back(p);
+                            },  
+                            None => {}
+                        }
+                    }
+                },
+                ListType::None => {},
             }
+        }else {
+            // The page doesn't exist in the page table
+            // it needs to be loaded from the disk.
 
-            let mut hash_guard = self.page_hash.write().unwrap();
+            // the buffer pool needs to have a hash table that contains the file-descriptors.
 
-            hash_guard.insert(page_id.to_string(), frame.clone());
-
-            drop(hash_guard);
-
-            self.old_sublist.push_front(frame.clone());
-
-            return Some(frame);
         }
 
-        // no free frames available, we need to evict a frame from the LRU list.
-        None
+        Err(InternalError)
+
     }
 
     /*

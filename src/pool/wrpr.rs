@@ -1,7 +1,7 @@
 use crate::pool::page::Page;
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU16};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,6 +9,12 @@ pub enum FrameListType {
     Old,
     New,
     Free,
+}
+
+pub enum ListType {
+    Upper,
+    Lower,
+    None,
 }
 
 pub struct FrameWrpr {
@@ -32,6 +38,9 @@ pub struct FrameWrpr {
     /// for the linked list requirements. (Flush list)
     pub ch_txn: usize,
     pub next_flush: UnsafeCell<*mut FrameWrpr>,
+
+    /// to know what LRU the page is in.
+    pub lst_type: ListType,
 }
 
 pub struct FrameWrprInner {
@@ -60,6 +69,8 @@ impl FrameWrpr {
             prev: UnsafeCell::new(std::ptr::null_mut()),
             ch_txn: 0,
             next_flush: UnsafeCell::new(std::ptr::null_mut()),
+
+            lst_type: ListType::None,
         }
     }
 
@@ -77,6 +88,9 @@ impl FrameWrpr {
             prev: UnsafeCell::new(std::ptr::null_mut()),
             ch_txn: 0,
             next_flush: UnsafeCell::new(std::ptr::null_mut()),
+
+            lst_type: ListType::None,
+
         }
     }
 
@@ -94,6 +108,8 @@ impl FrameWrpr {
             prev: UnsafeCell::new(std::ptr::null_mut()),
             ch_txn: 0,
             next_flush: UnsafeCell::new(std::ptr::null_mut()),
+
+            lst_type: ListType::None,
         }
     }
 

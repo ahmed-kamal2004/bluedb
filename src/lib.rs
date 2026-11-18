@@ -16,3 +16,4 @@ pub mod result;
 pub mod scanners;
 pub mod storage;
 pub mod txn;
+pub mod error;
